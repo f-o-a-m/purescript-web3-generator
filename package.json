@@ -1,0 +1,27 @@
+{
+  "name": "purescript-web3-generator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "dependencies": {
+    "crypto-js": "^3.1.9-1",
+    "bignumber.js": "^4.0.2"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/martyall/purescript-web3-generator.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/martyall/purescript-web3-generator/issues"
+  },
+  "homepage": "https://github.com/martyall/purescript-web3-generator#readme"
+}

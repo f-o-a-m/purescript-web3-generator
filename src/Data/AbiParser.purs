@@ -1,4 +1,4 @@
-module Data.ABI where
+module Data.AbiParser where
 
 import Prelude hiding (between)
 import Control.Alternative ((<|>))
