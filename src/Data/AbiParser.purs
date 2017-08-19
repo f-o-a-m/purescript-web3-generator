@@ -2,22 +2,23 @@ module Data.AbiParser where
 
 import Prelude hiding (between)
 import Control.Alternative ((<|>))
-import Data.String (joinWith, fromCharArray, toUpper, take, drop)
+import Data.String (fromCharArray)
 import Data.Maybe (Maybe(..))
 import Data.Array (some)
 import Data.Int (fromString)
 import Data.Either (Either(..))
-import Network.Ethereum.Web3.Types (HexString, sha3)
+import Data.Generic (class Generic, gShow)
 import Text.Parsing.Parser.String (string, char)
 import Data.EitherR (fmapL)
 import Text.Parsing.Parser (Parser, parseErrorMessage, fail, runParser)
 import Text.Parsing.Parser.Combinators (between, try, choice)
 import Text.Parsing.Parser.Token (digit)
-import Data.Generic (class Generic, gShow)
 
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode ((.?))
+
+--------------------------------------------------------------------------------
 
 class Format a where
   format :: a -> String
@@ -133,11 +134,6 @@ derive instance genericSolidityFunction :: Generic SolidityFunction
 instance showSolidityFunction :: Show SolidityFunction where
   show = gShow
 
-toUpperHead :: String -> String
-toUpperHead s =
-  let h = toUpper $ take 1 s
-      rest = drop 1 s
-  in h <> rest
 
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
@@ -151,11 +147,6 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
                             , outputs : os
                             , constant : c
                             }
-
-toSelector :: SolidityFunction -> HexString
-toSelector (SolidityFunction f) =
-  let args = map (\i -> format i) f.inputs
-  in sha3 $ f.name <> "(" <> joinWith "," args <> ")"
 
 --------------------------------------------------------------------------------
 -- | Solidity Constructor Parser
