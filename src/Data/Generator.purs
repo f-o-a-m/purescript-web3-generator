@@ -36,7 +36,7 @@ lowerCase s =
 byteSizeDigits :: Int -> String
 byteSizeDigits n =
   let ones = n `mod` 10
-      tens = n - ones `div` 10
+      tens = (n - ones) `div` 10
   in if tens == 0
        then "D" <> show ones
        else "(" <> "D" <> show tens <> " :& " <> "D" <> show ones <> ")"
@@ -50,10 +50,10 @@ toPSType s = case s of
   SolidityAddress -> "Address"
   SolidityUint -> "BigNumber"
   SolidityString -> "String"
-  SolidityBytesN n -> "BytesN " <> byteSizeDigits n
+  SolidityBytesN n -> "(" <> "BytesN " <> byteSizeDigits n <> ")"
   SolidityBytesD -> "ByteString"
-  SolidityVector n a -> "Vector " <> vectorLength n <> " " <> toPSType a
-  SolidityArray a -> "Array " <> toPSType a
+  SolidityVector n a ->  "(" <> "Vector " <> vectorLength n <> " " <> toPSType a <> ")"
+  SolidityArray a -> "(" <> "Array " <> toPSType a <> ")"
 
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers
@@ -200,7 +200,7 @@ instance codeFunctionCodeBlock :: Code FunctionCodeBlock where
   genCode (FunctionCodeBlock decl@(DataDecl d) inst helper) =
     let sep = fromCharArray $ replicate 80 '-'
         comment = "-- | " <> d.constructor
-        header = sep <> " \n " <> comment <> "\n" <> sep
+        header = sep <> " \n" <> comment <> "\n" <> sep
     in joinWith "\n\n" [ header
                        , genCode decl
                        , genCode inst

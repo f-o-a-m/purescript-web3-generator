@@ -35,7 +35,7 @@ simpleStorageParserSpec =
        isRight eabi `shouldEqual` true
 
     it "can generate an encoding instance" do
-       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/SimpleTupleStorage.json"
+       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/WeirdArrayTypeStorage.json"
        json <- either (throwError <<< error) pure ejson
        (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
        liftEff <<< log <<< genCode $ abi

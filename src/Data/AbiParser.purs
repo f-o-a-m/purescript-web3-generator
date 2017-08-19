@@ -72,7 +72,7 @@ numberParser = do
 parseBytesN :: Parser String SolidityType
 parseBytesN = do
   _ <- string "bytes"
-  n <- between (char '[') (char ']') numberParser
+  n <- numberParser
   pure $ SolidityBytesN n
 
 parseBytesD :: Parser String SolidityType
