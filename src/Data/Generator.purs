@@ -103,7 +103,7 @@ funToBuilderSomeArgs fun@(SolidityFunction f) =
                      }
   where
     toSingleton x = "(Singleton " <> x <> ")"
-    toTuple vars = "(Tuple" <> show (length vars) <> " " <> joinWith ", " vars <> ")"
+    toTuple vars = "(Tuple" <> show (length vars) <> " " <> joinWith " " vars <> ")"
 
 data AbiEncodingInstance =
   AbiEncodingInstance { instanceType :: String
@@ -178,7 +178,7 @@ toReturnType constant outputs =
      else "Web3MA () " <> case length outputs of
        0 -> "()"
        1 -> unsafePartial $ unsafeIndex outputs 0
-       _ -> "(Tuple" <> show (length outputs) <> joinWith " " outputs <> ")"
+       _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) =
