@@ -29,6 +29,7 @@ class Format a where
 
 data SolidityType =
     SolidityBool
+  | SolidityAddress
   | SolidityUint
   | SolidityString
   | SolidityBytesN Int
@@ -44,6 +45,7 @@ instance showSolidityType :: Show SolidityType where
 instance formatSolidityType :: Format SolidityType where
   format s = case s of
     SolidityBool -> "bool"
+    SolidityAddress -> "address"
     SolidityUint -> "uint256"
     SolidityString -> "string"
     SolidityBytesN n -> "bytes" <> "[" <> show n <> "]"
@@ -248,4 +250,3 @@ newtype Abi = Abi (Array AbiType)
 derive newtype instance decodeJsonAbi :: DecodeJson Abi
 
 derive newtype instance showAbi :: Show Abi
-
