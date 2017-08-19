@@ -47,6 +47,7 @@ vectorLength n = "N" <> show n
 toPSType :: SolidityType -> String
 toPSType s = case s of
   SolidityBool -> "Boolean"
+  SolidityAddress -> "Address"
   SolidityUint -> "BigNumber"
   SolidityString -> "String"
   SolidityBytesN n -> "BytesN " <> byteSizeDigits n
