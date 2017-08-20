@@ -1,12 +1,24 @@
 module Data.Generator where
 
 import Prelude
-import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower)
-import Data.Array (length, replicate, mapWithIndex, unsafeIndex)
+import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower, replace, Replacement(..), Pattern(..))
+import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
+import Data.Either (either)
+import Control.Monad.Eff.Console (CONSOLE, logShow)
+import Control.Monad.Eff.Class (liftEff)
 import Partial.Unsafe (unsafePartial)
-import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
+import Data.Argonaut (decodeJson)
+import Data.Argonaut.Parser (jsonParser)
+import Node.Encoding (Encoding(UTF8))
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Eff.Exception (error)
+import Control.Monad.Aff (Aff)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir)
+import Node.Path (FilePath, basenameWithoutExt, extname)
+import Data.Traversable (for)
 
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
+import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
 
 --------------------------------------------------------------------------------
 class Code a where
@@ -214,3 +226,32 @@ instance codeAbi :: Code Abi where
       genCode' at = case at of
         AbiFunction f -> genCode <<< funToFunctionCodeBlock $ f
         _ -> ""
+
+--------------------------------------------------------------------------------
+-- | Tools to read and write the files
+--------------------------------------------------------------------------------
+
+-- | read in json abi and write the generated code to a destination file
+writeCodeFromAbi :: forall e . FilePath -> FilePath -> Aff (fs :: FS | e) Unit
+writeCodeFromAbi abiFile destFile = do
+  ejson <- jsonParser <$> readTextFile UTF8 abiFile
+  json <- either (throwError <<< error) pure ejson
+  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
+  writeTextFile UTF8 destFile $ genCode abi
+
+genPSModuleName :: FilePath -> FilePath -> FilePath -> FilePath
+genPSModuleName jsonRoot pursRoot fp =
+    pursRoot <> "/" <> basenameWithoutExt fp' ".json" <> ".purs"
+  where
+    fp' = replace (Pattern jsonRoot) (Replacement pursRoot) fp
+
+findAllAbis :: forall e . FilePath -> FilePath -> Aff (fs :: FS, console :: CONSOLE | e) Unit
+findAllAbis jsonRoot psRoot = do
+  fs <- readdir jsonRoot
+  case fs of
+    [] -> throwError <<< error $ "No abi json files found in directory: " <> jsonRoot
+    fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
+      let f' = genPSModuleName jsonRoot psRoot f
+      liftEff $ logShow f
+      liftEff $ logShow f'
+      writeCodeFromAbi (jsonRoot <> "/" <> f) f'
