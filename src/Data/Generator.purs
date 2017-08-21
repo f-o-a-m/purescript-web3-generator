@@ -13,8 +13,9 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Aff (Aff)
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
-import Node.Path (FilePath, basenameWithoutExt, extname)
+import Node.Path (FilePath, basenameWithoutExt, extname, parse, normalize)
 import Data.Traversable (for)
+import Data.Foldable (fold)
 
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
@@ -145,7 +146,7 @@ instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
 --------------------------------------------------------------------------------
 
 callSigPrefix :: Array String
-callSigPrefix = ["Maybe Address", "Address", "CallMode"]
+callSigPrefix = ["Address", "Maybe Address", "CallMode"]
 
 sendSigPrefix :: Array String
 sendSigPrefix = ["Maybe Address", "Address", "BigNumber"]
@@ -175,7 +176,7 @@ funToHelperFunction fun@(SolidityFunction f) =
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
   let fun = if isCall then "callAsync" else "sendTxAsync"
-      modifier = if outputCount == 1 then "unSingleton <$> " else ""
+      modifier = if isCall && outputCount == 1 then "unSingleton <$> " else ""
   in modifier <> fun
 
 toPayload :: String -> Array String -> String
@@ -211,7 +212,7 @@ instance codeFunctionCodeBlock :: Code FunctionCodeBlock where
   genCode (FunctionCodeBlock decl@(DataDecl d) inst helper) =
     let sep = fromCharArray $ replicate 80 '-'
         comment = "-- | " <> d.constructor
-        header = sep <> " \n" <> comment <> "\n" <> sep
+        header = sep <> "\n" <> comment <> "\n" <> sep
     in joinWith "\n\n" [ header
                        , genCode decl
                        , genCode inst
@@ -232,26 +233,40 @@ instance codeAbi :: Code Abi where
 
 type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath}
 
-
-genPSModuleName :: GeneratorOptions -> FilePath -> FilePath
-genPSModuleName opts fp =
-    opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
-
--- | read in json abi and write the generated code to a destination file
-writeCodeFromAbi :: forall e . FilePath -> FilePath -> Aff (fs :: FS | e) Unit
-writeCodeFromAbi abiFile destFile = do
-  ejson <- jsonParser <$> readTextFile UTF8 abiFile
-  json <- either (throwError <<< error) pure ejson
-  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
-  writeTextFile UTF8 destFile $ genCode abi
+imports :: Array String
+imports = [ "import Prelude ((<>), (<$>))\n"
+          , "import Data.Maybe (Maybe)\n"
+          , "import Text.Parsing.Parser (fail)\n"
+          , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber)\n"
+          , "import Network.Ethereum.Web3.Contract (callAsync, sendTxAsync)\n"
+          , "import Network.Ethereum.Web3.Solidity\n"
+          ]
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
-generatePS opts = do
+generatePS os = do
+  let opts = os { pursDir = os.pursDir <> "/Contracts" }
   fs <- readdir opts.jsonDir
   isAlreadyThere <- exists opts.pursDir
   _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
   case fs of
     [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
-      let f' = genPSModuleName opts f
-      writeCodeFromAbi (opts.jsonDir <> "/" <> f) f'
+      let f' = genPSFileName opts f
+      writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
+
+-- | read in json abi and write the generated code to a destination file
+writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
+writeCodeFromAbi opts abiFile destFile = do
+  ejson <- jsonParser <$> readTextFile UTF8 abiFile
+  json <- either (throwError <<< error) pure ejson
+  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
+  writeTextFile UTF8 destFile $
+    genPSModuleStatement opts destFile <> "\n" <> fold imports <> "\n" <> genCode abi
+
+genPSFileName :: GeneratorOptions -> FilePath -> FilePath
+genPSFileName opts fp =
+    opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
+
+genPSModuleStatement :: GeneratorOptions -> FilePath -> String
+genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
+
