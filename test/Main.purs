@@ -34,7 +34,7 @@ simpleStorageParserSpec =
        isRight eabi `shouldEqual` true
 
     it "can generate an encoding instance" do
-      generatePS {jsonDir : "./abi-data", pursDir : "./abi" }
+      generatePS {jsonDir : "./abi-data", pursDir : "./src" }
     --   ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/WeirdArrayTypeStorage.json"
     --   json <- either (throwError <<< error) pure ejson
     --   (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
