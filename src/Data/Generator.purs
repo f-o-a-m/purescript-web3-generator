@@ -1,11 +1,10 @@
 module Data.Generator where
 
 import Prelude
-import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower, replace, Replacement(..), Pattern(..))
+import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower)
 import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
 import Data.Either (either)
-import Control.Monad.Eff.Console (CONSOLE, logShow)
-import Control.Monad.Eff.Class (liftEff)
+import Control.Monad.Eff.Console (CONSOLE)
 import Partial.Unsafe (unsafePartial)
 import Data.Argonaut (decodeJson)
 import Data.Argonaut.Parser (jsonParser)
@@ -13,7 +12,7 @@ import Node.Encoding (Encoding(UTF8))
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Aff (Aff)
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Data.Traversable (for)
 
@@ -231,6 +230,13 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
+type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath}
+
+
+genPSModuleName :: GeneratorOptions -> FilePath -> FilePath
+genPSModuleName opts fp =
+    opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
+
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi abiFile destFile = do
@@ -239,19 +245,13 @@ writeCodeFromAbi abiFile destFile = do
   (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
   writeTextFile UTF8 destFile $ genCode abi
 
-genPSModuleName :: FilePath -> FilePath -> FilePath -> FilePath
-genPSModuleName jsonRoot pursRoot fp =
-    pursRoot <> "/" <> basenameWithoutExt fp' ".json" <> ".purs"
-  where
-    fp' = replace (Pattern jsonRoot) (Replacement pursRoot) fp
-
-findAllAbis :: forall e . FilePath -> FilePath -> Aff (fs :: FS, console :: CONSOLE | e) Unit
-findAllAbis jsonRoot psRoot = do
-  fs <- readdir jsonRoot
+generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
+generatePS opts = do
+  fs <- readdir opts.jsonDir
+  isAlreadyThere <- exists opts.pursDir
+  _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
   case fs of
-    [] -> throwError <<< error $ "No abi json files found in directory: " <> jsonRoot
+    [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
-      let f' = genPSModuleName jsonRoot psRoot f
-      liftEff $ logShow f
-      liftEff $ logShow f'
-      writeCodeFromAbi (jsonRoot <> "/" <> f) f'
+      let f' = genPSModuleName opts f
+      writeCodeFromAbi (opts.jsonDir <> "/" <> f) f'
