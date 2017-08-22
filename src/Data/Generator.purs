@@ -4,10 +4,11 @@ import Prelude
 import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower)
 import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
 import Data.Either (either)
+import Data.Maybe (Maybe, fromJust)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Partial.Unsafe (unsafePartial)
-import Data.Argonaut (decodeJson)
+import Data.Argonaut (Json, decodeJson, _Object)
 import Data.Argonaut.Parser (jsonParser)
 import Node.Encoding (Encoding(UTF8))
 import Control.Monad.Error.Class (throwError)
@@ -16,6 +17,8 @@ import Control.Monad.Aff (Aff)
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Data.Traversable (for)
+import Data.Lens.Index (ix)
+import Data.Lens.Fold ((^?))
 import Data.Foldable (fold)
 import Ansi.Output (withGraphics, foreground)
 import Ansi.Codes (Color(Green))
@@ -268,8 +271,10 @@ generatePS os = do
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi opts abiFile destFile = do
   ejson <- jsonParser <$> readTextFile UTF8 abiFile
-  json <- either (throwError <<< error) pure ejson
-  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
+  json' <- either (throwError <<< error) pure ejson 
+  let (json1 :: Maybe Json) = json' ^? _Object <<< ix "abi"
+      (json2 :: Json)       = unsafePartial $ fromJust $ json1
+  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json2
   writeTextFile UTF8 destFile $
     genPSModuleStatement opts destFile <> "\n" <> fold imports <> "\n" <> genCode abi
 
