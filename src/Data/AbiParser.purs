@@ -81,12 +81,16 @@ parseBytesD = string "bytes" >>= \_ -> pure SolidityBytesD
 parseBytes :: Parser String SolidityType
 parseBytes = try parseBytesN <|> parseBytesD
 
+parseAddress :: Parser String SolidityType
+parseAddress = string "address" >>= \_ -> pure SolidityAddress 
+
 solidityBasicTypeParser :: Parser String SolidityType
 solidityBasicTypeParser =
     choice [ try parseUint
            , try parseBool
            , try parseString
            , try parseBytes
+           , try parseAddress
            ]
 
 parseArray :: Parser String SolidityType
