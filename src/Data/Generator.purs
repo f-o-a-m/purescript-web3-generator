@@ -4,7 +4,8 @@ import Prelude
 import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower)
 import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
 import Data.Either (either)
-import Control.Monad.Eff.Console (CONSOLE)
+import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Class (liftEff)
 import Partial.Unsafe (unsafePartial)
 import Data.Argonaut (decodeJson)
 import Data.Argonaut.Parser (jsonParser)
@@ -16,9 +17,13 @@ import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Data.Traversable (for)
 import Data.Foldable (fold)
+import Ansi.Output (withGraphics, foreground)
+import Ansi.Codes (Color(Green))
+
 
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
+
 
 --------------------------------------------------------------------------------
 
@@ -255,6 +260,9 @@ generatePS os = do
     fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
       let f' = genPSFileName opts f
       writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
+      let successCheck = withGraphics (foreground Green) $ "✔"
+          successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
+      liftEff <<< log $ successMsg
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit

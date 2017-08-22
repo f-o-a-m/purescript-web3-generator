@@ -14,7 +14,8 @@
     "purescript-errors": "^3.0.0",
     "purescript-argonaut-generic": "^1.2.0",
     "purescript-argonaut": "^3.0.0",
-    "purescript-yargs": "^3.0.1"
+    "purescript-yargs": "^3.0.1",
+    "purescript-ansi": "^4.0.0"
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0",
