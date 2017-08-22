@@ -13,7 +13,7 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Aff (Aff)
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
-import Node.Path (FilePath, basenameWithoutExt, extname, parse, normalize)
+import Node.Path (FilePath, basenameWithoutExt, extname)
 import Data.Traversable (for)
 import Data.Foldable (fold)
 
@@ -21,12 +21,14 @@ import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
 
 --------------------------------------------------------------------------------
+
 class Code a where
   genCode :: a -> String
 
 --------------------------------------------------------------------------------
 -- | Utils
 --------------------------------------------------------------------------------
+
 toSelector :: SolidityFunction -> HexString
 toSelector (SolidityFunction f) =
   let args = map (\i -> format i) f.inputs
