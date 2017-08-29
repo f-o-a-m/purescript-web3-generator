@@ -30,7 +30,8 @@ class Format a where
 data SolidityType =
     SolidityBool
   | SolidityAddress
-  | SolidityUint
+  | SolidityUint Int
+  | SolidityInt Int
   | SolidityString
   | SolidityBytesN Int
   | SolidityBytesD
@@ -46,7 +47,8 @@ instance formatSolidityType :: Format SolidityType where
   format s = case s of
     SolidityBool -> "bool"
     SolidityAddress -> "address"
-    SolidityUint -> "uint256"
+    SolidityUint n -> "uint" <> show n
+    SolidityInt n -> "int" <> show n
     SolidityString -> "string"
     SolidityBytesN n -> "bytes" <> "[" <> show n <> "]"
     SolidityBytesD -> "bytes"
@@ -54,7 +56,16 @@ instance formatSolidityType :: Format SolidityType where
     SolidityArray a -> format a <> "[]"
 
 parseUint :: Parser String SolidityType
-parseUint = string "uint256" >>= \_ -> pure SolidityUint
+parseUint = do
+  _ <- string "uint"
+  n <- numberParser
+  pure $ SolidityUint n
+
+parseInt :: Parser String SolidityType
+parseInt = do
+  _ <- string "int"
+  n <- numberParser
+  pure $ SolidityInt n
 
 parseBool :: Parser String SolidityType
 parseBool = string "bool" >>= \_ -> pure SolidityBool
@@ -87,6 +98,7 @@ parseBytes = try parseBytesN <|> parseBytesD
 solidityBasicTypeParser :: Parser String SolidityType
 solidityBasicTypeParser =
     choice [ try parseUint
+           , try parseInt
            , try parseAddress
            , try parseBool
            , try parseString
