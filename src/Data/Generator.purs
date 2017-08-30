@@ -1,7 +1,7 @@
 module Data.Generator where
 
 import Prelude
-import Data.String (fromCharArray, joinWith, take, drop, toUpper, toLower)
+import Data.String (fromCharArray, toCharArray, singleton, joinWith, take, drop, toUpper, toLower)
 import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
 import Data.Either (either)
 import Data.Maybe (fromJust)
@@ -55,13 +55,14 @@ lowerCase s =
       rest = drop 1 s
   in h <> rest
 
-byteSizeDigits :: Int -> String
-byteSizeDigits n =
-  let ones = n `mod` 10
-      tens = (n - ones) `div` 10
-  in if tens == 0
-       then "D" <> show ones
-       else "(" <> "D" <> show tens <> " :& " <> "D" <> show ones <> ")"
+makeDigits :: Int -> String
+makeDigits n =
+  let digits = map singleton <<< toCharArray <<< show $ n
+      ddigits = map (\a -> "D" <> a) digits
+      consed = joinWith " :& " ddigits
+  in if length ddigits == 1
+        then consed
+        else "(" <> consed <> ")"
 
 vectorLength :: Int -> String
 vectorLength n = "N" <> show n
@@ -70,9 +71,10 @@ toPSType :: SolidityType -> String
 toPSType s = case s of
   SolidityBool -> "Boolean"
   SolidityAddress -> "Address"
-  SolidityUint -> "BigNumber"
+  SolidityUint n -> "(" <> "UIntN " <> makeDigits n <> ")"
+  SolidityInt n -> "(" <> "IntN " <> makeDigits n <> ")"
   SolidityString -> "String"
-  SolidityBytesN n -> "(" <> "BytesN " <> byteSizeDigits n <> ")"
+  SolidityBytesN n -> "(" <> "BytesN " <> makeDigits n <> ")"
   SolidityBytesD -> "ByteString"
   SolidityVector n a ->  "(" <> "Vector " <> vectorLength n <> " " <> toPSType a <> ")"
   SolidityArray a -> "(" <> "Array " <> toPSType a <> ")"
@@ -286,4 +288,3 @@ genPSFileName opts fp =
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
-
