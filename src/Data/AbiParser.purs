@@ -73,9 +73,6 @@ parseBool = string "bool" >>= \_ -> pure SolidityBool
 parseString :: Parser String SolidityType
 parseString = string "string" >>= \_ -> pure SolidityString
 
-parseAddress :: Parser String SolidityType
-parseAddress = string "address" >>= \_ -> pure SolidityAddress
-
 numberParser :: Parser String Int
 numberParser = do
   n <- fromCharArray <$> some digit
@@ -96,7 +93,7 @@ parseBytes :: Parser String SolidityType
 parseBytes = try parseBytesN <|> parseBytesD
 
 parseAddress :: Parser String SolidityType
-parseAddress = string "address" >>= \_ -> pure SolidityAddress 
+parseAddress = string "address" >>= \_ -> pure SolidityAddress
 
 solidityBasicTypeParser :: Parser String SolidityType
 solidityBasicTypeParser =
