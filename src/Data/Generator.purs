@@ -196,15 +196,15 @@ toPayload constr args = case length args of
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
   if not constant
-     then "Web3MA () HexString"
-     else "Web3MA () " <> case length outputs of
+     then "Web3MA e HexString"
+     else "Web3MA e " <> case length outputs of
        0 -> "()"
        1 -> unsafePartial $ unsafeIndex outputs 0
        _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) =
-    let decl = h.unpackExpr.name <> " :: " <> joinWith " -> " h.signature
+    let decl = h.unpackExpr.name <> " :: " <> "forall e . " <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
