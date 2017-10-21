@@ -50,7 +50,7 @@ instance formatSolidityType :: Format SolidityType where
     SolidityUint n -> "uint" <> show n
     SolidityInt n -> "int" <> show n
     SolidityString -> "string"
-    SolidityBytesN n -> "bytes" <> "[" <> show n <> "]"
+    SolidityBytesN n -> "bytes" <> show n
     SolidityBytesD -> "bytes"
     SolidityVector n a -> format a <> "[" <> show n <> "]"
     SolidityArray a -> format a <> "[]"
