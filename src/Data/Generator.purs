@@ -87,7 +87,7 @@ data DataDecl =
 
 funToDataDecl :: SolidityFunction -> DataDecl
 funToDataDecl (SolidityFunction f) =
-  DataDecl { constructor : capitalize f.name
+  DataDecl { constructor : capitalize f.name <> "Fn"
            , factorTypes : map toPSType f.inputs
            }
 
@@ -107,19 +107,21 @@ funToBuilder fun@(SolidityFunction f) =
 funToBuilderNoArgs :: SolidityFunction -> BuilderMethod
 funToBuilderNoArgs fun@(SolidityFunction f) =
   let selectorBuilder = "HexString " <> "\"" <> (unHex $ toSelector fun) <> "\""
-  in BuilderMethod { unpackExpr : capitalize f.name
+      DataDecl decl = funToDataDecl fun
+  in BuilderMethod { unpackExpr : decl.constructor
                    , builderExpr : selectorBuilder
                    }
 
 funToBuilderSomeArgs :: SolidityFunction -> BuilderMethod
 funToBuilderSomeArgs fun@(SolidityFunction f) =
     let vars = mapWithIndex (\i _ -> "x"<> show i) f.inputs
+        DataDecl decl = funToDataDecl fun
         selectorBuilder = "HexString " <> "\"" <> (unHex $ toSelector fun) <> "\""
         sep = " <> toDataBuilder "
         restBuilder = if length vars == 1
                          then " <> toDataBuilder " <> toSingleton (unsafePartial $ unsafeIndex vars 0)
                          else " <> toDataBuilder " <> toTuple vars
-    in BuilderMethod { unpackExpr : "(" <> capitalize f.name <> " " <> joinWith " " vars <> ")"
+    in BuilderMethod { unpackExpr : "(" <> decl.constructor <> " " <> joinWith " " vars <> ")"
                      , builderExpr : selectorBuilder <> restBuilder
                      }
   where
@@ -136,8 +138,9 @@ data AbiEncodingInstance =
 funToEncodingInstance :: SolidityFunction -> AbiEncodingInstance
 funToEncodingInstance fun@(SolidityFunction f) =
   let BuilderMethod m = funToBuilder fun
-  in  AbiEncodingInstance { instanceType : capitalize f.name
-                          , instanceName : "abiEncoding" <> capitalize f.name
+      DataDecl decl = funToDataDecl fun
+  in  AbiEncodingInstance { instanceType : decl.constructor
+                          , instanceName : "abiEncoding" <> decl.constructor
                           , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
                           , parser : "fromDataParser = unsafeCrashWith \"Function type has no parser.\""
                           }
