@@ -14,6 +14,7 @@ import Data.Argonaut (decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex)
 import Data.Either (either)
+import Data.Foldable (fold)
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
@@ -138,7 +139,7 @@ funToEncodingInstance fun@(SolidityFunction f) =
   in  AbiEncodingInstance { instanceType : capitalize f.name
                           , instanceName : "abiEncoding" <> capitalize f.name
                           , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
-                          , parser : "fromDataParser = fail \"Function type has no parser.\""
+                          , parser : "fromDataParser = unsafeCrashWith \"Function type has no parser.\""
                           }
 
 instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
@@ -246,7 +247,7 @@ eventToEncodingInstance ev@(SolidityEvent e) =
   let ParserMethod m = eventToParser ev
   in  AbiEncodingInstance { instanceType : capitalize e.name
                           , instanceName : "abiEncoding" <> capitalize e.name
-                          , builder : "toDataBuilder = unsafeCrashWith \"Event type has no parser.\""
+                          , builder : "toDataBuilder = unsafeCrashWith \"Event type has no builder.\""
                           , parser : "fromDataParser = " <> m.parserExpr
                           }
 
@@ -279,12 +280,16 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
     nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
     eventIdStr = "Just (" <> "HexString " <> "\"" <> (unHex $ eventId ev) <> "\"" <> ")"
     mkFilterExpr :: String -> String
-    mkFilterExpr addr =
-      "defaultFilter # _address .~ Just " <> addr <> "\n\t\t"
-        <> joinWith "\n\t\t" [ "# _topics .~ Just [" <> eventIdStr <> joinWith "," (replicate nIndexedArgs "Nothing") <> "]"
-                             , "# _fromBlock .~ Nothing"
-                             , "# _toBlock .~ Nothing"
-                             ]
+    mkFilterExpr addr = fold
+      [ "defaultFilter"
+      , "\n\t\t"
+      , joinWith "\n\t\t"
+        [ "# _address .~ Just " <> addr
+        , "# _topics .~ Just [" <> eventIdStr <> joinWith "," (replicate nIndexedArgs "Nothing") <> "]"
+        , "# _fromBlock .~ Nothing"
+        , "# _toBlock .~ Nothing"
+        ]
+      ]
 
 eventToEventCodeBlock :: SolidityEvent -> CodeBlock
 eventToEventCodeBlock ev@(SolidityEvent e) =
@@ -342,7 +347,6 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
                         , "import Network.Ethereum.Web3.Solidity"
                         , "import Partial.Unsafe (unsafeCrashWith)"
-                        , "import Text.Parsing.Parser (fail)"
                         ]
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
