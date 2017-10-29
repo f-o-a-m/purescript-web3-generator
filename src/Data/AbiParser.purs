@@ -202,6 +202,9 @@ derive instance genericSolidityIndexedValue :: Generic IndexedSolidityValue
 instance showSolidityIndexedValue :: Show IndexedSolidityValue where
   show = gShow
 
+instance formatIndexedSolidityValue :: Format IndexedSolidityValue where
+  format (IndexedSolidityValue v) = format v.type
+
 instance decodeJsonIndexedSolidityValue :: DecodeJson IndexedSolidityValue where
   decodeJson json = do
     obj <- decodeJson json
