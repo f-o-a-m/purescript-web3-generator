@@ -1,28 +1,26 @@
 module Data.Generator where
 
 import Prelude
-import Data.String (fromCharArray, toCharArray, singleton, joinWith, take, drop, toUpper, toLower)
-import Data.Array (length, replicate, mapWithIndex, unsafeIndex, filter)
-import Data.Either (either)
-import Control.Monad.Eff.Console (CONSOLE, log)
+
+import Ansi.Codes (Color(Green))
+import Ansi.Output (withGraphics, foreground)
+import Control.Monad.Aff (Aff)
 import Control.Monad.Eff.Class (liftEff)
-import Partial.Unsafe (unsafePartial)
+import Control.Monad.Eff.Console (CONSOLE, log)
+import Control.Monad.Eff.Exception (error)
+import Control.Monad.Error.Class (throwError)
+import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), IndexedSolidityValue(..), SolidityFunction(..), SolidityEvent(..), format)
 import Data.Argonaut (decodeJson)
 import Data.Argonaut.Parser (jsonParser)
+import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex)
+import Data.Either (either)
+import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
+import Data.Traversable (for)
+import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
 import Node.Encoding (Encoding(UTF8))
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Eff.Exception (error)
-import Control.Monad.Aff (Aff)
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
-import Data.Traversable (for)
-import Data.Foldable (fold)
-import Ansi.Output (withGraphics, foreground)
-import Ansi.Codes (Color(Green))
-
-
-import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
-import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), SolidityFunction(..), format)
+import Partial.Unsafe (unsafePartial)
 
 
 --------------------------------------------------------------------------------
@@ -209,15 +207,99 @@ instance codeHelperFunction :: Code HelperFunction where
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
 
+--------------------------------------------------------------------------------
+
+eventToDataDecl :: SolidityEvent -> DataDecl
+eventToDataDecl (SolidityEvent ev) =
+  DataDecl { constructor: ev.name
+           , factorTypes: map (toPSType <<< \(IndexedSolidityValue sv) -> sv.type) ev.inputs
+           }
+
+data ParserMethod =
+  ParserMethod { parserExpr :: String
+               }
+
+eventToParser :: SolidityEvent -> ParserMethod
+eventToParser ev@(SolidityEvent e) =
+  if length e.inputs == 0 then eventToParserNoArgs ev else eventToParserSomeArgs ev
+
+eventToParserNoArgs :: SolidityEvent -> ParserMethod
+eventToParserNoArgs ev@(SolidityEvent e) =
+  let DataDecl decl = eventToDataDecl ev
+  in ParserMethod { parserExpr : "pure " <> decl.constructor
+                  }
+
+eventToParserSomeArgs :: SolidityEvent -> ParserMethod
+eventToParserSomeArgs ev@(SolidityEvent e) =
+    let DataDecl decl = eventToDataDecl ev
+        starter = if length decl.factorTypes == 1
+                    then fromSingleton decl.constructor
+                    else fromTuple decl.constructor (length decl.factorTypes)
+    in ParserMethod { parserExpr: starter <> " <$> fromDataParser"
+                    }
+  where
+    fromSingleton c = "uncurry1 " <> c
+    fromTuple c n = "uncurry" <> show n <> " " <> c
+
+eventToEncodingInstance :: SolidityEvent -> AbiEncodingInstance
+eventToEncodingInstance ev@(SolidityEvent e) =
+  let ParserMethod m = eventToParser ev
+  in  AbiEncodingInstance { instanceType : capitalize e.name
+                          , instanceName : "abiEncoding" <> capitalize e.name
+                          , builder : "toDataBuilder = unsafeCrashWith \"Event type has no parser.\""
+                          , parser : "fromDataParser = " <> m.parserExpr
+                          }
+
+data EventFilterInstance =
+  EventFilterInstance { instanceName :: String
+                      , instanceType :: String
+                      , filterDef :: String
+                      }
+
+instance codeEventInstance :: Code EventFilterInstance where
+  genCode (EventFilterInstance i) =
+    let header = "instance " <> i.instanceName <> " :: EventFilter " <> i.instanceType <> " where"
+        eventFilter = "\t" <> i.filterDef
+    in joinWith "\n" [header, eventFilter]
+
+
+eventId :: SolidityEvent -> HexString
+eventId (SolidityEvent e) =
+  let eventArgs = map (\a -> format a) e.inputs
+  in sha3 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
+
+eventToEventFilterInstance :: SolidityEvent -> EventFilterInstance
+eventToEventFilterInstance ev@(SolidityEvent e) =
+    let DataDecl decl = eventToDataDecl ev
+    in EventFilterInstance { instanceName: "eventFilter" <> capitalize decl.constructor
+                           , instanceType: capitalize decl.constructor
+                           , filterDef: "eventFilter _ addr = " <> mkFilterExpr "addr"
+                           }
+  where
+    nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
+    eventIdStr = "Just (" <> "HexString " <> "\"" <> (unHex $ eventId ev) <> "\"" <> ")"
+    mkFilterExpr :: String -> String
+    mkFilterExpr addr =
+      "defaultFilter # _address .~ Just " <> addr <> "\n\t\t"
+        <> joinWith "\n\t\t" [ "# _topics .~ Just [" <> eventIdStr <> joinWith "," (replicate nIndexedArgs "Nothing") <> "]"
+                             , "# _fromBlock .~ Nothing"
+                             , "# _toBlock .~ Nothing"
+                             ]
+
+eventToEventCodeBlock :: SolidityEvent -> CodeBlock
+eventToEventCodeBlock ev@(SolidityEvent e) =
+  EventCodeBlock (eventToDataDecl ev) (eventToEncodingInstance ev) (eventToEventFilterInstance ev)
 
 --------------------------------------------------------------------------------
 
-data FunctionCodeBlock = FunctionCodeBlock DataDecl AbiEncodingInstance HelperFunction
+data CodeBlock =
+    FunctionCodeBlock DataDecl AbiEncodingInstance HelperFunction
+  | EventCodeBlock DataDecl AbiEncodingInstance EventFilterInstance
 
-funToFunctionCodeBlock :: SolidityFunction -> FunctionCodeBlock
+funToFunctionCodeBlock :: SolidityFunction -> CodeBlock
 funToFunctionCodeBlock f = FunctionCodeBlock (funToDataDecl f) (funToEncodingInstance f) (funToHelperFunction f)
 
-instance codeFunctionCodeBlock :: Code FunctionCodeBlock where
+instance codeFunctionCodeBlock :: Code CodeBlock where
   genCode (FunctionCodeBlock decl@(DataDecl d) inst helper) =
     let sep = fromCharArray $ replicate 80 '-'
         comment = "-- | " <> d.constructor
@@ -227,6 +309,15 @@ instance codeFunctionCodeBlock :: Code FunctionCodeBlock where
                        , genCode inst
                        , genCode helper
                        ]
+  genCode (EventCodeBlock decl@(DataDecl d) abiInst eventInst) =
+    let sep = fromCharArray $ replicate 80 '-'
+        comment = "-- | " <> d.constructor
+        header = sep <> "\n" <> comment <> "\n" <> sep
+    in joinWith "\n\n" [ header
+                       , genCode decl
+                       , genCode abiInst
+                       , genCode eventInst
+                       ]
 
 instance codeAbi :: Code Abi where
   genCode (Abi abi) = joinWith "\n\n" <<< map genCode' $ abi
@@ -234,6 +325,7 @@ instance codeAbi :: Code Abi where
       genCode' :: AbiType -> String
       genCode' at = case at of
         AbiFunction f -> genCode <<< funToFunctionCodeBlock $ f
+        AbiEvent e -> genCode <<< eventToEventCodeBlock $ e
         _ -> ""
 
 --------------------------------------------------------------------------------
@@ -242,14 +334,16 @@ instance codeAbi :: Code Abi where
 
 type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath}
 
-imports :: Array String
-imports = [ "import Prelude ((<>), (<$>))\n"
-          , "import Data.Maybe (Maybe)\n"
-          , "import Text.Parsing.Parser (fail)\n"
-          , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber)\n"
-          , "import Network.Ethereum.Web3.Contract (callAsync, sendTxAsync)\n"
-          , "import Network.Ethereum.Web3.Solidity\n"
-          ]
+imports :: String
+imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Lens ((.~))"
+                        , "import Data.Maybe (Maybe(..))"
+                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
+                        , "import Network.Ethereum.Web3.Solidity"
+                        , "import Partial.Unsafe (unsafeCrashWith)"
+                        , "import Text.Parsing.Parser (fail)"
+                        ]
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
@@ -273,7 +367,7 @@ writeCodeFromAbi opts abiFile destFile = do
   json <- either (throwError <<< error) pure ejson
   (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
   writeTextFile UTF8 destFile $
-    genPSModuleStatement opts destFile <> "\n" <> fold imports <> "\n" <> genCode abi
+    genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi
 
 genPSFileName :: GeneratorOptions -> FilePath -> FilePath
 genPSFileName opts fp =
