@@ -282,13 +282,16 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
   where
     nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
     eventIdStr = "Just (" <> "HexString " <> "\"" <> (unHex $ eventId ev) <> "\"" <> ")"
+    indexedVals = if nIndexedArgs == 0
+                    then ""
+                    else "," <> joinWith "," (replicate nIndexedArgs "Nothing")
     mkFilterExpr :: String -> String
     mkFilterExpr addr = fold
       [ "defaultFilter"
       , "\n\t\t"
       , joinWith "\n\t\t"
         [ "# _address .~ Just " <> addr
-        , "# _topics .~ Just [" <> eventIdStr <> joinWith "," (replicate nIndexedArgs "Nothing") <> "]"
+        , "# _topics .~ Just [" <> eventIdStr <> indexedVals
         , "# _fromBlock .~ Nothing"
         , "# _toBlock .~ Nothing"
         ]
