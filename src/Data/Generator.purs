@@ -291,7 +291,7 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
       , "\n\t\t"
       , joinWith "\n\t\t"
         [ "# _address .~ Just " <> addr
-        , "# _topics .~ Just [" <> eventIdStr <> indexedVals
+        , "# _topics .~ Just [" <> eventIdStr <> indexedVals <> "]"
         , "# _fromBlock .~ Nothing"
         , "# _toBlock .~ Nothing"
         ]
