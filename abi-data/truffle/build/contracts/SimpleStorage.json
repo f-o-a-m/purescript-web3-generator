@@ -1,0 +1,47 @@
+{
+  "contract_name": "SimpleStorage",
+  "abi": [
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "count",
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "constant": false,
+      "inputs": [
+        {
+          "name": "_count",
+          "type": "uint256"
+        }
+      ],
+      "name": "setCount",
+      "outputs": [],
+      "payable": false,
+      "type": "function"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "name": "_count",
+          "type": "uint256"
+        }
+      ],
+      "name": "CountSet",
+      "type": "event"
+    }
+  ],
+  "unlinked_binary": "0x6060604052341561000f57600080fd5b5b60eb8061001e6000396000f300606060405263ffffffff7c010000000000000000000000000000000000000000000000000000000060003504166306661abd81146046578063d14e62b8146068575b600080fd5b3415605057600080fd5b6056607d565b60405190815260200160405180910390f35b3415607257600080fd5b607b6004356083565b005b60005481565b60008190557fa32bc18230dd172221ac5c4821a5f1f1a831f27b1396d244cdd891c58f1324358160405190815260200160405180910390a15b505600a165627a7a72305820efc30a9b7a4ec87b3a45bcb671d71b041677fbfaaa673ae9c057bd402924c9ba0029",
+  "networks": {},
+  "schema_version": "0.0.5",
+  "updated_at": 1509375086162
+}

@@ -4,17 +4,21 @@ import Prelude
 
 import Ansi.Codes (Color(Green))
 import Ansi.Output (withGraphics, foreground)
+import Control.Error.Util (note)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), IndexedSolidityValue(..), SolidityFunction(..), SolidityEvent(..), format)
-import Data.Argonaut (decodeJson)
+import Data.Argonaut (Json, decodeJson)
+import Data.Argonaut.Prisms (_Object)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex)
-import Data.Either (either)
+import Data.Either (Either, either)
 import Data.Foldable (fold)
+import Data.Lens ((^?))
+import Data.Lens.Index (ix)
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
@@ -343,7 +347,7 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
-type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath}
+type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean}
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
@@ -357,31 +361,57 @@ imports = joinWith "\n" [ "import Prelude"
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
-  let opts = os { pursDir = os.pursDir <> "/Contracts" }
-  fs <- readdir opts.jsonDir
-  isAlreadyThere <- exists opts.pursDir
-  _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
-  case fs of
-    [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-    fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
-      let f' = genPSFileName opts f
-      writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
-      let successCheck = withGraphics (foreground Green) $ "✔"
-          successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
-      liftEff <<< log $ successMsg
+    let opts = os { pursDir = os.pursDir <> "/Contracts" }
+    fs <- readdir opts.jsonDir
+    isAlreadyThere <- exists opts.pursDir
+    _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
+    case fs of
+      [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
+      fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
+        let f' = genPSFileName opts f
+        writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
+        let successCheck = withGraphics (foreground Green) $ "✔"
+            successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
+        liftEff <<< log $ successMsg
+  where
+    genPSFileName :: GeneratorOptions -> FilePath -> FilePath
+    genPSFileName opts fp =
+        opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi opts abiFile destFile = do
-  ejson <- jsonParser <$> readTextFile UTF8 abiFile
-  json <- either (throwError <<< error) pure ejson
-  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
-  writeTextFile UTF8 destFile $
-    genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi
+    ejson <- jsonParser <$> readTextFile UTF8 abiFile
+    json <- either (throwError <<< error) pure ejson
+    (abi :: Abi) <- either (throwError <<< error) pure $ parseAbi opts json
+    writeTextFile UTF8 destFile $
+      genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi
 
-genPSFileName :: GeneratorOptions -> FilePath -> FilePath
-genPSFileName opts fp =
-    opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
+parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String Abi
+parseAbi {truffle} abiJson = case truffle of
+  false -> decodeJson abiJson
+  true -> let mabi = abiJson ^? _Object <<< ix "abi"
+          in note "truffle artifact missing abi field" mabi >>= decodeJson
+
+
+{-
+writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
+writeCodeFromAbi opts abiFile destFile = do
+  ejson <- jsonParser <$> readTextFile UTF8 abiFile
+  json' <- either (throwError <<< error) pure ejson
+  let (json1 :: Maybe Json) = json' ^? _Object <<< ix "abi"
+      (json2 :: Json)       = unsafePartial $ fromJust $ json1
+  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json2
+  json' <- either (throwError <<< error) pure ejson
+  let jsonABI = unsafePartial
+              $ fromJust
+              $ json' ^? _Object <<< ix "abi"
+  (abi :: Abi) <- either (throwError <<< error) pure
+                $ decodeJson jsonABI
+  writeTextFile UTF8 destFile $
+    genPSModuleStatement opts destFile <> "\n" <> fold imports <> "\n" <> genCode abi
+
+-}
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
