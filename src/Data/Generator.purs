@@ -146,7 +146,7 @@ funToEncodingInstance fun@(SolidityFunction f) =
   in  AbiEncodingInstance { instanceType : decl.constructor
                           , instanceName : "abiEncoding" <> decl.constructor
                           , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
-                          , parser : "fromDataParser = unsafeCrashWith \"Function type has no parser.\""
+                          , parser : "fromDataParser = fail \"Function type has no parser.\""
                           }
 
 instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
@@ -254,7 +254,7 @@ eventToEncodingInstance ev@(SolidityEvent e) =
   let ParserMethod m = eventToParser ev
   in  AbiEncodingInstance { instanceType : capitalize e.name
                           , instanceName : "abiEncoding" <> capitalize e.name
-                          , builder : "toDataBuilder = unsafeCrashWith \"Event type has no builder.\""
+                          , builder : "toDataBuilder = const mempty"
                           , parser : "fromDataParser = " <> m.parserExpr
                           }
 
@@ -351,12 +351,13 @@ type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Bo
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Monoid (mempty)"
                         , "import Data.Lens ((.~))"
+                        , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
                         , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
                         , "import Network.Ethereum.Web3.Solidity"
-                        , "import Partial.Unsafe (unsafeCrashWith)"
                         ]
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
@@ -392,26 +393,6 @@ parseAbi {truffle} abiJson = case truffle of
   false -> decodeJson abiJson
   true -> let mabi = abiJson ^? _Object <<< ix "abi"
           in note "truffle artifact missing abi field" mabi >>= decodeJson
-
-
-{-
-writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
-writeCodeFromAbi opts abiFile destFile = do
-  ejson <- jsonParser <$> readTextFile UTF8 abiFile
-  json' <- either (throwError <<< error) pure ejson
-  let (json1 :: Maybe Json) = json' ^? _Object <<< ix "abi"
-      (json2 :: Json)       = unsafePartial $ fromJust $ json1
-  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json2
-  json' <- either (throwError <<< error) pure ejson
-  let jsonABI = unsafePartial
-              $ fromJust
-              $ json' ^? _Object <<< ix "abi"
-  (abi :: Abi) <- either (throwError <<< error) pure
-                $ decodeJson jsonABI
-  writeTextFile UTF8 destFile $
-    genPSModuleStatement opts destFile <> "\n" <> fold imports <> "\n" <> genCode abi
-
--}
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
