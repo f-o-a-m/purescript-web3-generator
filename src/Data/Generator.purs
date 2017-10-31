@@ -156,6 +156,9 @@ instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
 
+toCamel :: String -> String
+toCamel s = (toLower $ take 1 s) <> (drop 1 s) 
+
 callSigPrefix :: Array String
 callSigPrefix = ["Address", "Maybe Address", "CallMode"]
 
@@ -179,7 +182,7 @@ funToHelperFunction fun@(SolidityFunction f) =
       helperTransport = toTransportPrefix f.constant $ length f.outputs
       helperPayload = toPayload decl.constructor conVars
   in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
-                    , unpackExpr : {name : f.name, stockArgs : stockVars, payloadArgs : conVars}
+                    , unpackExpr : {name : toCamel f.name, stockArgs : stockVars, payloadArgs : conVars}
                     , payload : helperPayload
                     , transport : helperTransport
                     }
