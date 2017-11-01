@@ -167,8 +167,7 @@ sendSigPrefix :: Array String
 sendSigPrefix = ["Maybe Address", "Address", "BigNumber"]
 
 data HelperFunction =
-  HelperFunction { constraints :: Array String
-                 , signature :: Array String
+  HelperFunction { signature :: Array String
                  , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
                  , payload :: String
                  , transport :: String

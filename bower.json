@@ -19,8 +19,8 @@
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0",
-    "purescript-spec": "^1.0.0",
-    "purescript-node-fs-aff": "^4.0.0",
+    "purescript-spec": "^2.0.0",
+    "purescript-node-fs-aff": "^5.0.0",
     "purescript-console": "^3.0.0"
   }
 }
