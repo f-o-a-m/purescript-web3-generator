@@ -1,0 +1,20 @@
+{
+    "name": "purescript-web3-generator",
+    "set": "master",
+    "source": "https://github.com/f-o-a-m/package-sets.git",
+    "depends": [
+        "prelude",
+        "argonaut",
+        "argonaut-core",
+        "argonaut-codecs",
+        "argonaut-generic",
+        "errors",
+        "yargs",
+        "ansi",
+        "spec",
+        "node-fs-aff",
+        "console",
+        "psci-support",
+        "web3"
+    ]
+}
