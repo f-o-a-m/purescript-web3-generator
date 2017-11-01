@@ -8,7 +8,7 @@
   ],
   "dependencies": {
     "purescript-prelude": "^3.1.0",
-    "purescript-web3": "git+https://github.com/f-o-a-m/purescript-web3#bc6bddbf57ca59ae9b9eae4e32abdfb19c6b7235",
+    "purescript-web3": "git+https://github.com/f-o-a-m/purescript-web3#d22e881dda0a5c5e0453d96697b1153cf5139b9d",
     "purescript-argonaut-core": "^3.1.0",
     "purescript-argonaut-codecs": "^3.2.0",
     "purescript-errors": "^3.0.0",
@@ -19,8 +19,8 @@
   },
   "devDependencies": {
     "purescript-psci-support": "^3.0.0",
-    "purescript-spec": "^1.0.0",
-    "purescript-node-fs-aff": "^4.0.0",
+    "purescript-spec": "^2.0.0",
+    "purescript-node-fs-aff": "^5.0.0",
     "purescript-console": "^3.0.0"
   }
 }
