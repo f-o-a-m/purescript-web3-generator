@@ -167,7 +167,8 @@ sendSigPrefix :: Array String
 sendSigPrefix = ["Maybe Address", "Address", "BigNumber"]
 
 data HelperFunction =
-  HelperFunction { signature :: Array String
+  HelperFunction { constraints :: Array String
+                 , signature :: Array String
                  , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
                  , payload :: String
                  , transport :: String
@@ -202,15 +203,15 @@ toPayload constr args = case length args of
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
   if not constant
-     then "Web3MA e HexString"
-     else "Web3MA e " <> case length outputs of
+     then "Web3MA p e HexString"
+     else "Web3MA p e " <> case length outputs of
        0 -> "()"
        1 -> unsafePartial $ unsafeIndex outputs 0
        _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) =
-    let decl = h.unpackExpr.name <> " :: " <> "forall e . " <> joinWith " -> " h.signature
+    let decl = h.unpackExpr.name <> " :: " <> "forall p e . IsAsyncProvider p => " <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
@@ -356,6 +357,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
                         , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
                         , "import Network.Ethereum.Web3.Solidity"
                         ]
