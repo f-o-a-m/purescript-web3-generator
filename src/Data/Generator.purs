@@ -4,17 +4,21 @@ import Prelude
 
 import Ansi.Codes (Color(Green))
 import Ansi.Output (withGraphics, foreground)
+import Control.Error.Util (note)
 import Control.Monad.Aff (Aff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), IndexedSolidityValue(..), SolidityFunction(..), SolidityEvent(..), format)
-import Data.Argonaut (decodeJson)
+import Data.Argonaut (Json, decodeJson)
+import Data.Argonaut.Prisms (_Object)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex)
-import Data.Either (either)
+import Data.Either (Either, either)
 import Data.Foldable (fold)
+import Data.Lens ((^?))
+import Data.Lens.Index (ix)
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
@@ -142,7 +146,7 @@ funToEncodingInstance fun@(SolidityFunction f) =
   in  AbiEncodingInstance { instanceType : decl.constructor
                           , instanceName : "abiEncoding" <> decl.constructor
                           , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
-                          , parser : "fromDataParser = unsafeCrashWith \"Function type has no parser.\""
+                          , parser : "fromDataParser = fail \"Function type has no parser.\""
                           }
 
 instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
@@ -186,7 +190,7 @@ funToHelperFunction fun@(SolidityFunction f) =
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
-  let fun = if isCall then "callAsync" else "sendTxAsync"
+  let fun = if isCall then "call" else "sendTx"
       modifier = if isCall && outputCount == 1 then "unSingleton <$> " else ""
   in modifier <> fun
 
@@ -198,15 +202,15 @@ toPayload constr args = case length args of
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
   if not constant
-     then "Web3MA e HexString"
-     else "Web3MA e " <> case length outputs of
+     then "Web3 p e HexString"
+     else "Web3 p e " <> case length outputs of
        0 -> "()"
        1 -> unsafePartial $ unsafeIndex outputs 0
        _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) =
-    let decl = h.unpackExpr.name <> " :: " <> "forall e . " <> joinWith " -> " h.signature
+    let decl = h.unpackExpr.name <> " :: " <> "forall p e . IsAsyncProvider p => " <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
@@ -250,7 +254,7 @@ eventToEncodingInstance ev@(SolidityEvent e) =
   let ParserMethod m = eventToParser ev
   in  AbiEncodingInstance { instanceType : capitalize e.name
                           , instanceName : "abiEncoding" <> capitalize e.name
-                          , builder : "toDataBuilder = unsafeCrashWith \"Event type has no builder.\""
+                          , builder : "toDataBuilder = const mempty"
                           , parser : "fromDataParser = " <> m.parserExpr
                           }
 
@@ -343,45 +347,53 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
-type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath}
+type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean}
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Monoid (mempty)"
                         , "import Data.Lens ((.~))"
+                        , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
-                        , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
+                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
+                        , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
-                        , "import Partial.Unsafe (unsafeCrashWith)"
                         ]
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
-  let opts = os { pursDir = os.pursDir <> "/Contracts" }
-  fs <- readdir opts.jsonDir
-  isAlreadyThere <- exists opts.pursDir
-  _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
-  case fs of
-    [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-    fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
-      let f' = genPSFileName opts f
-      writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
-      let successCheck = withGraphics (foreground Green) $ "✔"
-          successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
-      liftEff <<< log $ successMsg
+    let opts = os { pursDir = os.pursDir <> "/Contracts" }
+    fs <- readdir opts.jsonDir
+    isAlreadyThere <- exists opts.pursDir
+    _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
+    case fs of
+      [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
+      fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
+        let f' = genPSFileName opts f
+        writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
+        let successCheck = withGraphics (foreground Green) $ "✔"
+            successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
+        liftEff <<< log $ successMsg
+  where
+    genPSFileName :: GeneratorOptions -> FilePath -> FilePath
+    genPSFileName opts fp =
+        opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi opts abiFile destFile = do
-  ejson <- jsonParser <$> readTextFile UTF8 abiFile
-  json <- either (throwError <<< error) pure ejson
-  (abi :: Abi) <- either (throwError <<< error) pure $ decodeJson json
-  writeTextFile UTF8 destFile $
-    genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi
+    ejson <- jsonParser <$> readTextFile UTF8 abiFile
+    json <- either (throwError <<< error) pure ejson
+    (abi :: Abi) <- either (throwError <<< error) pure $ parseAbi opts json
+    writeTextFile UTF8 destFile $
+      genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi
 
-genPSFileName :: GeneratorOptions -> FilePath -> FilePath
-genPSFileName opts fp =
-    opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
+parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String Abi
+parseAbi {truffle} abiJson = case truffle of
+  false -> decodeJson abiJson
+  true -> let mabi = abiJson ^? _Object <<< ix "abi"
+          in note "truffle artifact missing abi field" mabi >>= decodeJson
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
