@@ -190,7 +190,7 @@ funToHelperFunction fun@(SolidityFunction f) =
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
-  let fun = if isCall then "callAsync" else "sendTxAsync"
+  let fun = if isCall then "call" else "sendTx"
       modifier = if isCall && outputCount == 1 then "unSingleton <$> " else ""
   in modifier <> fun
 
@@ -202,8 +202,8 @@ toPayload constr args = case length args of
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
   if not constant
-     then "Web3MA p e HexString"
-     else "Web3MA p e " <> case length outputs of
+     then "Web3 p e HexString"
+     else "Web3 p e " <> case length outputs of
        0 -> "()"
        1 -> unsafePartial $ unsafeIndex outputs 0
        _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
@@ -355,9 +355,9 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3MA, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
-                        , "import Network.Ethereum.Web3.Contract (class EventFilter, callAsync, sendTxAsync)"
+                        , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
                         ]
 
