@@ -239,6 +239,17 @@ instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
                          , anonymous : a
                          }
 
+data SolidityFallback = SolidityFallback
+
+derive instance genericSolidityFallback :: Generic SolidityFallback
+
+instance showSolidityFallback :: Show SolidityFallback where
+  show = gShow
+
+instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
+  decodeJson json = do
+    pure $ SolidityFallback
+
 --------------------------------------------------------------------------------
 -- | ABI
 --------------------------------------------------------------------------------
@@ -247,6 +258,7 @@ data AbiType =
     AbiFunction SolidityFunction
   | AbiConstructor SolidityConstructor
   | AbiEvent SolidityEvent
+  | AbiFallback SolidityFallback
 
 derive instance genericAbiType :: Generic AbiType
 
@@ -262,6 +274,7 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       "function" -> AbiFunction <$> decodeJson json'
       "constructor" -> AbiConstructor <$> decodeJson json'
       "event" -> AbiEvent <$> decodeJson json'
+      "fallback" -> AbiFallback <$> decodeJson json'
       _ -> Left $ "Unkown abi type: " <> t
 
 
