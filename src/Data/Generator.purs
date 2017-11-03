@@ -167,7 +167,7 @@ callSigPrefix :: Array String
 callSigPrefix = ["Address", "Maybe Address", "CallMode"]
 
 sendSigPrefix :: Array String
-sendSigPrefix = ["Maybe Address", "Address", "BigNumber"]
+sendSigPrefix = ["Maybe Address", "Address", "u"]
 
 data HelperFunction =
   HelperFunction { signature :: Array String
@@ -180,7 +180,7 @@ funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
   let (DataDecl decl) = funToDataDecl fun opts
       sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
-      stockVars = mapWithIndex (\i _ -> "x" <> show i) sigPrefix
+      stockVars = ["x0","x1","u"]
       offset = length stockVars
       conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
       helperTransport = toTransportPrefix f.constant $ length f.outputs
@@ -213,7 +213,7 @@ toReturnType constant outputs =
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) _ =
-    let decl = h.unpackExpr.name <> " :: " <> "forall p e . IsAsyncProvider p => " <> joinWith " -> " h.signature
+    let decl = h.unpackExpr.name <> " :: " <> "forall p e u. Unit u => IsAsyncProvider p => " <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
@@ -274,7 +274,7 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
         eventGenerics = (\d -> "\t" <> d) <$> i.genericDefs
         instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
     in joinWith "\n\n" $ i.genericDeriving : instances 
- 
+
 eventToEventGenericInstance :: SolidityEvent -> EventGenericInstance
 eventToEventGenericInstance ev@(SolidityEvent e) =
   let DataDecl decl = eventToDataDecl ev
@@ -385,7 +385,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Types (class Unit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
