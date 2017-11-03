@@ -26,11 +26,10 @@ simpleStorageParserSpec =
   describe "simple storage parser spec" do
 
     it "can parse the simple storage abi" do
-
-       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"
-       json <- either (throwError <<< error) pure ejson
-       let (eabi :: Either String Abi) = parseAbi {truffle: true} json
-       isRight eabi `shouldEqual` true
+      ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"
+      json <- either (throwError <<< error) pure ejson
+      let (eabi :: Either String Abi) = parseAbi {truffle: true} json
+      isRight eabi `shouldEqual` true
 
     it "can generate an encoding instance" do
       generatePS {jsonDir : "./abi-data/truffle/build/contracts", pursDir : "./src", truffle:true, prefix: "" }
