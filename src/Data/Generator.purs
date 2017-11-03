@@ -12,15 +12,16 @@ import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Data.AbiParser (Abi(..), AbiType(..), SolidityType(..), IndexedSolidityValue(..), SolidityFunction(..), SolidityEvent(..), format)
 import Data.Argonaut (Json, decodeJson)
-import Data.Argonaut.Prisms (_Object)
 import Data.Argonaut.Parser (jsonParser)
-import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex)
+import Data.Argonaut.Prisms (_Object)
+import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith)
 import Data.Either (Either, either)
 import Data.Foldable (fold)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
+import Data.Tuple (Tuple(..), fst, snd)
 import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
@@ -260,13 +261,25 @@ eventToEncodingInstance ev@(SolidityEvent e) =
                           , parser : "fromDataParser = " <> m.parserExpr
                           }
 
+data EventGenericInstance =
+  EventGenericInstance { instanceName :: String
+                       , instanceTypes :: Array String 
+                       , genericDefs :: Array String
+                       }
+
+instance codeEventGenericInstance :: Code EventGenericInstance where
+  genCode (EventGenericInstance i) _ =
+    let headers = map (\t -> "instance " <> i.instanceName <> " :: Generic " <> t <> " where") i.instanceTypes :: Array String
+        eventGenerics = map (\d -> "\t" <> d) i.genericDefs :: Array String
+    in joinWith "\n" $ zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
+
 data EventFilterInstance =
   EventFilterInstance { instanceName :: String
                       , instanceType :: String
                       , filterDef :: String
                       }
 
-instance codeEventInstance :: Code EventFilterInstance where
+instance codeEventFilterInstance :: Code EventFilterInstance where
   genCode (EventFilterInstance i) _ =
     let header = "instance " <> i.instanceName <> " :: EventFilter " <> i.instanceType <> " where"
         eventFilter = "\t" <> i.filterDef
