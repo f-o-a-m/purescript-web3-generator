@@ -273,8 +273,7 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
     let headers = uncurry (\n t -> "instance " <> n <> " :: " <> t <> " where") <$> (zip i.instanceNames i.instanceTypes)
         eventGenerics = (\d -> "\t" <> d) <$> i.genericDefs
         instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
-        all = i.genericDeriving : instances :: Array String
-    in joinWith "\n\n" $ all
+    in joinWith "\n\n" $ i.genericDeriving : instances 
  
 eventToEventGenericInstance :: SolidityEvent -> EventGenericInstance
 eventToEventGenericInstance ev@(SolidityEvent e) =
