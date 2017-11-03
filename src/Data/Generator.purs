@@ -274,14 +274,15 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
         eventGenerics = (\d -> "\t" <> d) <$> i.genericDefs
         instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
         all = i.genericDeriving : instances :: Array String
-    in joinWith "\n" $ all
+    in joinWith "\n\n" $ all
+ 
 eventToEventGenericInstance :: SolidityEvent -> EventGenericInstance
 eventToEventGenericInstance ev@(SolidityEvent e) =
   let DataDecl decl = eventToDataDecl ev
       capConst = capitalize decl.constructor
-  in EventGenericInstance { instanceNames: (\n -> capConst <> n) <$> ["show", "eq"]
+  in EventGenericInstance { instanceNames: (\n -> "eventGeneric" <> capConst <> n) <$> ["Show", "eq"]
                           , instanceTypes: (\t -> t <> " " <> capConst) <$> ["Show", "Eq"]
-                          , genericDefs: ["show x = GShow.eq x", "eq x y = GEq.eq x y"]
+                          , genericDefs: ["show = GShow.genericShow", "eq = GEq.genericEq"]
                           , genericDeriving: "derive instance generic" <> capConst <> " :: G.Generic " <> capConst <> " _"
                           }
 
@@ -378,6 +379,9 @@ type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Bo
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Generic.Rep as G"
+                        , "import Data.Generic.Rep.Eq as GEq"
+                        , "import Data.Generic.Rep.Show as GShow"
                         , "import Data.Monoid (mempty)"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
