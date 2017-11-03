@@ -19,12 +19,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/martyall/purescript-web3-generator.git"
+    "url": "git+https://github.com/f-o-a-m/purescript-web3-generator.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/martyall/purescript-web3-generator/issues"
+    "url": "https://github.com/f-o-a-m/purescript-web3-generator/issues"
   },
-  "homepage": "https://github.com/martyall/purescript-web3-generator#readme"
+  "homepage": "https://github.com/f-o-a-m/purescript-web3-generator#readme"
 }
