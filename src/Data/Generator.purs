@@ -14,7 +14,7 @@ import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityE
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith, (:), uncons, reverse)
+import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith, (:), uncons)
 import Data.Either (Either, either)
 import Data.Foldable (fold)
 import Data.Lens ((^?))
