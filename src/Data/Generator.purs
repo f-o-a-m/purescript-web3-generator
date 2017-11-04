@@ -14,11 +14,12 @@ import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityE
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith, (:), uncons, reverse)
 import Data.Either (Either, either)
 import Data.Foldable (fold)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
+import Data.Maybe (Maybe(..))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (uncurry)
@@ -70,15 +71,22 @@ vectorLength n = "N" <> show n
 
 toPSType :: SolidityType -> String
 toPSType s = case s of
-  SolidityBool -> "Boolean"
-  SolidityAddress -> "Address"
-  SolidityUint n -> "(" <> "UIntN " <> makeDigits n <> ")"
-  SolidityInt n -> "(" <> "IntN " <> makeDigits n <> ")"
-  SolidityString -> "String"
-  SolidityBytesN n -> "(" <> "BytesN " <> makeDigits n <> ")"
-  SolidityBytesD -> "ByteString"
-  SolidityVector n a ->  "(" <> "Vector " <> vectorLength n <> " " <> toPSType a <> ")"
-  SolidityArray a -> "(" <> "Array " <> toPSType a <> ")"
+    SolidityBool -> "Boolean"
+    SolidityAddress -> "Address"
+    SolidityUint n -> "(" <> "UIntN " <> makeDigits n <> ")"
+    SolidityInt n -> "(" <> "IntN " <> makeDigits n <> ")"
+    SolidityString -> "String"
+    SolidityBytesN n -> "(" <> "BytesN " <> makeDigits n <> ")"
+    SolidityBytesD -> "ByteString"
+    SolidityVector ns a -> expandVector ns a
+    SolidityArray a -> "(" <> "Array " <> toPSType a <> ")"
+  where
+    expandVector ns' a' = unsafePartial $ case uncons ns' of
+      Just {head, tail} ->
+        if length tail == 0
+          then "(" <> "Vector " <> vectorLength head <> " " <> toPSType a' <> ")"
+          else "(" <> "Vector " <> vectorLength head <> " " <> expandVector tail a' <> ")"
+
 
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers

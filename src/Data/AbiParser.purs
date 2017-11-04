@@ -1,22 +1,22 @@
 module Data.AbiParser where
 
-import Prelude hiding (between)
-import Control.Alternative ((<|>))
-import Data.String (fromCharArray)
-import Data.Maybe (Maybe(..))
-import Data.Array (some)
-import Data.Int (fromString)
-import Data.Either (Either(..))
-import Data.Generic (class Generic, gShow)
-import Text.Parsing.Parser.String (string, char)
-import Data.EitherR (fmapL)
-import Text.Parsing.Parser (Parser, parseErrorMessage, fail, runParser)
-import Text.Parsing.Parser.Combinators (between, try, choice)
-import Text.Parsing.Parser.Token (digit)
+import Prelude
 
+import Control.Alternative ((<|>))
 import Data.Argonaut.Core (fromObject)
-import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode ((.?))
+import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
+import Data.Array (fromFoldable)
+import Data.Either (Either(..))
+import Data.EitherR (fmapL)
+import Data.Foldable (foldMap)
+import Data.Generic (class Generic, gShow)
+import Data.Int (fromString)
+import Data.Maybe (Maybe(..), maybe)
+import Data.String (fromCharArray)
+import Text.Parsing.StringParser (Parser, fail, runParser, try)
+import Text.Parsing.StringParser.Combinators (lookAhead, choice, many1Till, optionMaybe, many1)
+import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
 
 --------------------------------------------------------------------------------
 
@@ -35,7 +35,7 @@ data SolidityType =
   | SolidityString
   | SolidityBytesN Int
   | SolidityBytesD
-  | SolidityVector Int SolidityType
+  | SolidityVector (Array Int) SolidityType
   | SolidityArray SolidityType
 
 derive instance genericSolidityType :: Generic SolidityType
@@ -52,82 +52,82 @@ instance formatSolidityType :: Format SolidityType where
     SolidityString -> "string"
     SolidityBytesN n -> "bytes" <> show n
     SolidityBytesD -> "bytes"
-    SolidityVector n a -> format a <> "[" <> show n <> "]"
+    SolidityVector ns a -> format a <> foldMap (\n -> "[" <> show n <> "]") ns
     SolidityArray a -> format a <> "[]"
 
-parseUint :: Parser String SolidityType
+parseUint :: Parser SolidityType
 parseUint = do
   _ <- string "uint"
   n <- numberParser
   pure $ SolidityUint n
 
-parseInt :: Parser String SolidityType
+parseInt :: Parser SolidityType
 parseInt = do
   _ <- string "int"
   n <- numberParser
   pure $ SolidityInt n
 
-parseBool :: Parser String SolidityType
+parseBool :: Parser SolidityType
 parseBool = string "bool" >>= \_ -> pure SolidityBool
 
-parseString :: Parser String SolidityType
+parseString :: Parser SolidityType
 parseString = string "string" >>= \_ -> pure SolidityString
 
-numberParser :: Parser String Int
+numberParser :: Parser Int
 numberParser = do
-  n <- fromCharArray <$> some digit
+  n <- fromCharArray <<< fromFoldable <$> many1 anyDigit
   case fromString n of
     Nothing -> fail $ "Couldn't parse as Natural : " <> n
     Just n' -> pure $ n'
 
-parseBytesN :: Parser String SolidityType
-parseBytesN = do
+parseBytes :: Parser SolidityType
+parseBytes = do
   _ <- string "bytes"
-  n <- numberParser
-  pure $ SolidityBytesN n
+  mn <- optionMaybe numberParser
+  pure $ maybe SolidityBytesD SolidityBytesN  mn
 
-parseBytesD :: Parser String SolidityType
-parseBytesD = string "bytes" >>= \_ -> pure SolidityBytesD
 
-parseBytes :: Parser String SolidityType
-parseBytes = try parseBytesN <|> parseBytesD
-
-parseAddress :: Parser String SolidityType
+parseAddress :: Parser SolidityType
 parseAddress = string "address" >>= \_ -> pure SolidityAddress
 
-solidityBasicTypeParser :: Parser String SolidityType
+solidityBasicTypeParser :: Parser SolidityType
 solidityBasicTypeParser =
-    choice [ try parseUint
-           , try parseInt
-           , try parseAddress
-           , try parseBool
-           , try parseString
-           , try parseBytes
-           , try parseAddress
+    choice [ parseUint
+           , parseInt
+           , parseAddress
+           , parseBool
+           , parseString
+           , parseBytes
+           , parseAddress
            ]
 
-parseArray :: Parser String SolidityType
+parseVector :: Parser SolidityType
+parseVector = do
+    s <- solidityBasicTypeParser
+    ns <- many1Till lengthParser ((lookAhead $ void (string "[]")) <|> eof)
+    pure $ SolidityVector (fromFoldable $ ns) s
+  where
+    lengthParser = do
+          _ <- char '['
+          n <- numberParser
+          _ <- char ']'
+          pure n
+
+parseArray :: Parser SolidityType
 parseArray = do
-  s <- solidityBasicTypeParser
-  _ <- string "[]"
+  s <- (try $ parseVector <* string "[]") <|> (solidityBasicTypeParser <* string "[]")
   pure $ SolidityArray s
 
-parseVector :: Parser String SolidityType
-parseVector = do
-  s <- solidityBasicTypeParser
-  n <- between (char '[') (char ']') numberParser
-  pure $ SolidityVector n s
 
-
-solidityTypeParser :: Parser String SolidityType
+solidityTypeParser :: Parser SolidityType
 solidityTypeParser =
     choice [ try parseArray
            , try parseVector
-           , try solidityBasicTypeParser
+           , solidityBasicTypeParser
            ]
 
 parseSolidityType :: String -> Either String SolidityType
-parseSolidityType s = fmapL parseErrorMessage $ runParser s solidityTypeParser
+parseSolidityType s = fmapL show $ runParser solidityTypeParser s
 
 instance decodeJsonSolidityType :: DecodeJson SolidityType where
   decodeJson json = do
