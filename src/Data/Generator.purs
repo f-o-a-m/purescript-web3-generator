@@ -182,12 +182,14 @@ data HelperFunction =
                  , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
                  , payload :: String
                  , transport :: String
+                 , constraints :: Array String
                  }
 
 funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
   let (DataDecl decl) = funToDataDecl fun opts
       sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
+      constraints = if f.constant then ["IsAsyncProvider p"] else ["IsAsyncProvider p", "Unit u"]
       stockVars = ["x0","x1","u"]
       offset = length stockVars
       conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
@@ -197,6 +199,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                     , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, payloadArgs : conVars}
                     , payload : helperPayload
                     , transport : helperTransport
+                    , constraints: constraints
                     }
 
 toTransportPrefix :: Boolean -> Int -> String
@@ -221,7 +224,8 @@ toReturnType constant outputs =
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) _ =
-    let decl = h.unpackExpr.name <> " :: " <> "forall p e u. Unit u => IsAsyncProvider p => " <> joinWith " -> " h.signature
+    let constraints = fold $ map (\c -> c <> " => ") h.constraints
+        decl = h.unpackExpr.name <> " :: " <> "forall p e u. " <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
