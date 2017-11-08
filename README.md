@@ -37,7 +37,7 @@ main = generatorMain
 
 ```
 
-from there, add a build step that essentially does (note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
+2. From there, add a build step 
 
 ```sh
 
@@ -45,7 +45,10 @@ pulp -m Generator --src-path generator run -- --abis <abis> --dest src/Contracts
 
 ```
 
-now, until [this issue](https://github.com/purescript-contrib/pulp/issues/309) is fixed, we have to temporarily replace the step above with something like this
+(note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
+
+
+Until [this issue](https://github.com/purescript-contrib/pulp/issues/309) is fixed, we have to temporarily replace the step above with something like this
 
 ```sh
 pulp -m Generator --src-path generator build --to generator.js
@@ -53,7 +56,7 @@ node generator.js --abis <abis> --dest src/Contracts ...
 rm generator.js
 ```
 
-this should create contract modules for each contract into your `src/Contracts` directory that your code can now depend on.
+3. Now you should have created contract modules for each contract into your `src/Contracts` directory that your code can depend on.
 
 ## Documentation
 
