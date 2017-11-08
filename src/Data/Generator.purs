@@ -189,10 +189,14 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                         else ["IsAsyncProvider p", "Unit u"]
         stockVars = if not f.payable && not f.constant
                        then ["x0","x1"]
-                       else ["x0", "x1", "u"]
+                       else if f.constant
+                              then ["x0", "x1", "cm"]
+                              else ["x0", "x1", "u"]
         stockArgsR = if not f.payable && not f.constant
                         then ["x0","x1", "noPay"]
-                        else ["x0", "x1", "u"]
+                        else if f.constant
+                               then ["x0", "x1", "cm"]
+                               else ["x0", "x1", "u"]
         offset = length stockVars
         conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
         helperTransport = toTransportPrefix f.constant $ length f.outputs
