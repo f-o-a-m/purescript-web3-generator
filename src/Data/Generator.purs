@@ -171,36 +171,54 @@ instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
 
-callSigPrefix :: Array String
-callSigPrefix = ["Address", "Maybe Address", "CallMode"]
-
-sendSigPrefix :: Array String
-sendSigPrefix = ["Maybe Address", "Address", "u"]
-
 data HelperFunction =
   HelperFunction { signature :: Array String
-                 , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
+                 , unpackExpr :: {name :: String, stockArgs :: Array String, stockArgsR :: Array String, payloadArgs :: Array String}
                  , payload :: String
                  , transport :: String
                  , constraints :: Array String
+                 , payable :: Boolean
+                 , quantifiedVars :: Array String
                  }
 
 funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
-  let (DataDecl decl) = funToDataDecl fun opts
-      sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
-      constraints = if f.constant then ["IsAsyncProvider p"] else ["IsAsyncProvider p", "Unit u"]
-      stockVars = ["x0","x1","u"]
-      offset = length stockVars
-      conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
-      helperTransport = toTransportPrefix f.constant $ length f.outputs
-      helperPayload = toPayload decl.constructor conVars
-  in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
-                    , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, payloadArgs : conVars}
-                    , payload : helperPayload
-                    , transport : helperTransport
-                    , constraints: constraints
-                    }
+    let (DataDecl decl) = funToDataDecl fun opts
+        sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
+        constraints = if f.constant || not f.payable
+                        then ["IsAsyncProvider p"]
+                        else ["IsAsyncProvider p", "Unit u"]
+        quantifiedVars = if f.constant || not f.payable
+                            then ["e", "p"]
+                            else ["e", "p", "u"]
+        stockVars = if not f.payable && not f.constant
+                       then ["x0","x1"]
+                       else if f.constant
+                              then ["x0", "x1", "cm"]
+                              else ["x0", "x1", "u"]
+        stockArgsR = if not f.payable && not f.constant
+                        then ["x0","x1", "noPay"]
+                        else if f.constant
+                               then ["x0", "x1", "cm"]
+                               else ["x0", "x1", "u"]
+        offset = length stockVars
+        conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
+        helperTransport = toTransportPrefix f.constant $ length f.outputs
+        helperPayload = toPayload decl.constructor conVars
+    in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
+                      , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockArgsR, payloadArgs : conVars}
+                      , payload : helperPayload
+                      , transport : helperTransport
+                      , constraints: constraints
+                      , payable: f.payable
+                      , quantifiedVars: quantifiedVars
+                      }
+  where
+    callSigPrefix = ["Address", "Maybe Address", "CallMode"]
+    sendSigPrefix = if f.payable
+                      then ["Maybe Address", "Address", "u"]
+                      else ["Maybe Address", "Address"]
+
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
@@ -225,9 +243,9 @@ toReturnType constant outputs =
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) _ =
     let constraints = fold $ map (\c -> c <> " => ") h.constraints
-        decl = h.unpackExpr.name <> " :: " <> "forall p e u. " <> constraints <> joinWith " -> " h.signature
+        decl = h.unpackExpr.name <> " :: " <> "forall " <> joinWith " " h.quantifiedVars <> " . " <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
-        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
+        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgsR <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
 
 --------------------------------------------------------------------------------
@@ -397,7 +415,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (class Unit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
+                        , "import Network.Ethereum.Web3.Types (class Unit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"

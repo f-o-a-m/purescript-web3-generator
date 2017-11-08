@@ -146,6 +146,7 @@ data SolidityFunction =
                    , inputs :: Array SolidityType
                    , outputs :: Array SolidityType
                    , constant :: Boolean
+                   , payable :: Boolean
                    }
 
 derive instance genericSolidityFunction :: Generic SolidityFunction
@@ -161,10 +162,12 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
     is <- obj .? "inputs"
     os <- obj .? "outputs"
     c <- obj .? "constant"
+    p <- obj .? "payable"
     pure $ SolidityFunction { name : nm
                             , inputs : is
                             , outputs : os
                             , constant : c
+                            , payable: p
                             }
 
 --------------------------------------------------------------------------------
