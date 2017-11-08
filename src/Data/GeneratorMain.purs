@@ -14,8 +14,8 @@ import Node.Yargs.Setup (usage, defaultVersion, defaultHelp, example)
 
 generatorMain :: forall e. Eff (fs :: FS, console :: CONSOLE, exception :: EXCEPTION | e)  Unit
 generatorMain =
-    let setup = usage "$0 --abis ./contract-abis --dest destination -" 
-             <> example "$0 --abis ./contract-abis" "Generate contracts in current directory"
+    let setup = usage "$0 --abis <abis> --dest <dest> ./src --prefix <prefix> --truffle <bool>" 
+             <> example "$0 --abis ./contract-abis --dest ./src --prefix eth_ --truffle false " "Generate contract code from solidity compiler output in current directory with prefix eth_ into the src/ directory"
              <> defaultVersion 
              <> defaultHelp
     in runY setup $ go <$> yarg "abis" [] Nothing (Right "Must specify abi source directory.") true
