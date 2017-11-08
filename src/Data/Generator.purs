@@ -178,6 +178,7 @@ data HelperFunction =
                  , transport :: String
                  , constraints :: Array String
                  , payable :: Boolean
+                 , quantifiedVars :: Array String
                  }
 
 funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
@@ -187,6 +188,9 @@ funToHelperFunction fun@(SolidityFunction f) opts =
         constraints = if f.constant || not f.payable
                         then ["IsAsyncProvider p"]
                         else ["IsAsyncProvider p", "Unit u"]
+        quantifiedVars = if f.constant || not f.payable
+                            then ["e", "p"]
+                            else ["e", "p", "u"]
         stockVars = if not f.payable && not f.constant
                        then ["x0","x1"]
                        else if f.constant
@@ -207,6 +211,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                       , transport : helperTransport
                       , constraints: constraints
                       , payable: f.payable
+                      , quantifiedVars: quantifiedVars
                       }
   where
     callSigPrefix = ["Address", "Maybe Address", "CallMode"]
@@ -238,7 +243,7 @@ toReturnType constant outputs =
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) _ =
     let constraints = fold $ map (\c -> c <> " => ") h.constraints
-        decl = h.unpackExpr.name <> " :: " <> "forall p e u. " <> constraints <> joinWith " -> " h.signature
+        decl = h.unpackExpr.name <> " :: " <> "forall " <> joinWith " " h.quantifiedVars <> " . " <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
         defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgsR <> " " <> h.payload
     in decl <> "\n" <> defL <> " = " <> defR
