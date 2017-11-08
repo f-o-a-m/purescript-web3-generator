@@ -187,7 +187,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
         sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
         constraints = if f.constant || not f.payable
                         then ["IsAsyncProvider p"]
-                        else ["IsAsyncProvider p", "Unit u"]
+                        else ["IsAsyncProvider p", "EtherUnit u"]
         quantifiedVars = if f.constant || not f.payable
                             then ["e", "p"]
                             else ["e", "p", "u"]
@@ -415,7 +415,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (class Unit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types (class EtherUnit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
