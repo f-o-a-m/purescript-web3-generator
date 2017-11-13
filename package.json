@@ -1,6 +1,6 @@
 {
   "name": "purescript-web3-generator",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -15,8 +15,7 @@
   },
   "devDependencies": {},
   "scripts": {
-    "psc-package": "./node_modules/.bin/psc-package update",
-    "postinstall": "npm run psc-package",
+    "postinstall": "./node_modules/.bin/psc-package update",
     "test": "pulp test"
   },
   "repository": {
