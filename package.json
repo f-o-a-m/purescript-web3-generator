@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "directories": {
-    "test": "test"
+    "test": "test",
+    "lib": "./src"
   },
   "dependencies": {
     "bignumber.js": "^4.0.2",
