@@ -1,4 +1,5 @@
 # purescript-web3-generator
+<img src=https://github.com/f-o-a-m/purescript-web3/blob/master/purescript-web3-logo.png width="75">
 
 [![Latest release](http://img.shields.io/github/release/f-o-a-m/purescript-web3-generator.svg?branch=master)](https://github.com/f-o-a-m/purescript-web3-generator/releases)
 [![Build status](https://travis-ci.org/f-o-a-m/purescript-web3-generator.svg?branch=master)](https://travis-ci.org/f-o-a-m/purescript-web3-generator?branch=master)
