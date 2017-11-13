@@ -23,7 +23,8 @@ import Data.Maybe (Maybe(..))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (uncurry)
-import Network.Ethereum.Web3.Types (HexString(..), unHex, sha3)
+import Network.Ethereum.Web3.Types.Types (HexString(..), unHex)
+import Network.Ethereum.Web3.Types.Sha3 (sha3)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
@@ -415,7 +416,8 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
-                        , "import Network.Ethereum.Web3.Types (class EtherUnit, HexString(..), CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
+                        , "import Network.Ethereum.Web3.Types (class EtherUnit, CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
