@@ -17,7 +17,7 @@
   "devDependencies": {},
   "scripts": {
     "postinstall": "./node_modules/.bin/psc-package update",
-    "test": "pulp test"
+    "test": "pulp --psc-package test"
   },
   "repository": {
     "type": "git",
