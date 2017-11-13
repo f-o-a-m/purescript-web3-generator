@@ -61,7 +61,7 @@ rm generator.js
 
 ## Documentation
 
-Module documentation is [published on Pursuit](http://pursuit.purescript.org/packages/purescript-web3-web3).
+Module documentation is [published on Pursuit](http://pursuit.purescript.org/packages/purescript-web3-generator).
 
 ## Resources
 
