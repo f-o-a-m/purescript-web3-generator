@@ -16,6 +16,7 @@
         "node-fs-aff",
         "console",
         "psci-support",
+        "tagged",
         "web3"
     ]
 }
