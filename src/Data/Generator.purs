@@ -14,7 +14,7 @@ import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityE
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, replicate, unsafeIndex, zip, zipWith, (:), uncons)
+import Data.Array (filter, length, mapWithIndex, replicate, uncons, unsafeIndex, zip, zipWith, (:))
 import Data.Either (Either, either)
 import Data.Foldable (fold)
 import Data.Lens ((^?))
@@ -22,9 +22,9 @@ import Data.Lens.Index (ix)
 import Data.Maybe (Maybe(..))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
-import Data.Tuple (uncurry)
-import Network.Ethereum.Web3.Types.Types (HexString(..), unHex)
+import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types.Sha3 (sha3)
+import Network.Ethereum.Web3.Types.Types (HexString(..), unHex)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
@@ -115,61 +115,6 @@ instance codeDataDecl :: Code FunTypeDecl where
             , "Tagged (SProxy \"" <> decl.signature <> "\") (Tuple" <> show nArgs <> " " <> joinWith " " decl.factorTypes <> ")"
             ]
 
-{-
--- | Encoding instance
-data BuilderMethod =
-  BuilderMethod { unpackExpr :: String
-                , builderExpr :: String
-                }
-funToBuilder :: SolidityFunction -> GeneratorOptions -> BuilderMethod
-funToBuilder fun@(SolidityFunction f) opts =
-  if length f.inputs == 0
-  then funToBuilderNoArgs fun opts
-  else funToBuilderSomeArgs fun opts
-
-funToBuilderNoArgs :: SolidityFunction -> GeneratorOptions -> BuilderMethod
-funToBuilderNoArgs fun@(SolidityFunction f) opts =
-  let FunTypeDecl decl = funToTypeDecl fun opts
-  in BuilderMethod { unpackExpr : decl.constructor
-                   , builderExpr : funToBuilder fun opts
-                   }
-
-funToBuilderSomeArgs :: SolidityFunction -> GeneratorOptions -> BuilderMethod
-funToBuilderSomeArgs fun@(SolidityFunction f) opts =
-    let vars = mapWithIndex (\i _ -> "x" <> show i) f.inputs
-        FunTypeDecl decl = funToTypeDecl fun opts
-        sep = " <> toDataBuilder "
-        restBuilder = toTuple vars
-    in BuilderMethod { unpackExpr : "(" <> decl.constructor <> " " <> joinWith " " vars <> ")"
-                     , builderExpr : restBuilder
-                     }
-  where
-    toTuple vars = "(Tuple" <> show (length vars) <> " " <> joinWith " " vars <> ")"
-
-data AbiEncodeInstance =
-  AbiEncodeInstance { instanceType :: String
-                    , instanceName :: String
-                    , builder :: String
-                    }
-
-funToEncodeInstance :: SolidityFunction -> GeneratorOptions -> AbiEncodeInstance
-funToEncodeInstance fun@(SolidityFunction f) opts =
-  let BuilderMethod m = funToBuilder fun opts
-      DataDecl decl = funToDataDecl fun opts
-  in  AbiEncodeInstance { instanceType : decl.constructor
-                        , instanceName : "abiEncoding" <> decl.constructor
-                        , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
-                        }
-
-instance codeAbiEncodingInstance :: Code AbiEncodeInstance where
-  genCode (AbiEncodeInstance i) _ =
-    let header = "instance " <> i.instanceName <> " :: ABIEncode " <> i.instanceType <> " where"
-        bldr = "\t" <> i.builder
-        prsr = "\t" <> i.parser
-    in joinWith "\n" [header, bldr, prsr]
-
--}
-
 --------------------------------------------------------------------------------
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
@@ -230,9 +175,9 @@ toTransportPrefix isCall outputCount =
   in modifier <> fun
 
 toPayload :: String -> Array String -> String
-toPayload typeName args = case length args of
-  0 -> "Tuple0"
-  n -> "((tagged $ Tuple" <> show n <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
+toPayload typeName args =
+  let n = length args
+  in "((tagged $ Tuple" <> show n <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
 
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
@@ -253,14 +198,43 @@ instance codeHelperFunction :: Code HelperFunction where
 
 --------------------------------------------------------------------------------
 
-{-
+data EventDataDecl =
+  EventDataDecl { constructor :: String
+                , indexedTypes :: Array (Tuple String String)
+                , nonIndexedTypes :: Array (Tuple String String)
+                , recordType :: Array (Tuple String String)
+                }
 
-eventToDataDecl :: SolidityEvent -> DataDecl
+eventToDataDecl :: SolidityEvent -> EventDataDecl
 eventToDataDecl (SolidityEvent ev) =
-  DataDecl { constructor: ev.name
-           , factorTypes: map (toPSType <<< \(IndexedSolidityValue sv) -> sv.type) ev.inputs
-           }
+  let is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
+      nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
+  in EventDataDecl { constructor: ev.name
+                   , indexedTypes: map (\(IndexedSolidityValue sv) -> (Tuple sv.name $ toPSType sv.type)) is
+                   , nonIndexedTypes: map (\(IndexedSolidityValue sv) -> (Tuple sv.name $ toPSType sv.type)) nis
+                   , recordType: map (\(IndexedSolidityValue sv) -> Tuple sv.name $ toPSType sv.type) ev.inputs
+                   }
 
+
+instance codeEventDataDecl :: Code EventDataDecl where
+  genCode (EventDataDecl decl) _ =
+    let recordField (Tuple label val) = label <> " :: " <> val
+        newtypeDef = "newtype " <> decl.constructor <> " = " <> decl.constructor <> " {" <> joinWith "," (map recordField decl.recordType) <> "}"
+        genericInstanceDecl = "derive instance generic" <> decl.constructor <> " :: G.Generic " <> decl.constructor <> " _"
+        newtypeInstanceDecl = "derive instance newtype" <> decl.constructor <> " :: Newtype " <> decl.constructor <> " _"
+    in joinWith "\n\n" [ newtypeDef
+                       , genericInstanceDecl
+                       , newtypeInstanceDecl
+                       ]
+
+
+--instance codeEventDataDecl :: Code EventDataDecl where
+--  genCode (EventDataDecl decl) _ =
+--    let indexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.indexedTypes)
+--        nonIndexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes)
+--        recordType = 
+
+{-
 data ParserMethod =
   ParserMethod { parserExpr :: String
                }
@@ -361,17 +335,17 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
       , "# _toBlock .~ Nothing"
       ]
     ]
+-}
 
 eventToEventCodeBlock :: SolidityEvent -> CodeBlock
 eventToEventCodeBlock ev@(SolidityEvent e) =
-  EventCodeBlock (eventToDataDecl ev) (eventToEncodingInstance ev) (eventToEventFilterInstance ev) (eventToEventGenericInstance ev)
+  EventCodeBlock (eventToDataDecl ev) -- (eventToEncodingInstance ev) (eventToEventFilterInstance ev) (eventToEventGenericInstance ev)
 
--}
 --------------------------------------------------------------------------------
 
 data CodeBlock =
     FunctionCodeBlock FunTypeDecl HelperFunction
-  -- | EventCodeBlock DataDecl AbiEncodingInstance EventFilterInstance EventGenericInstance
+  | EventCodeBlock EventDataDecl -- AbiEncodingInstance EventFilterInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> CodeBlock
 funToFunctionCodeBlock f opts = FunctionCodeBlock (funToTypeDecl f opts) (funToHelperFunction f opts)
@@ -385,16 +359,16 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
                        , genCode decl opts
                        , genCode helper opts
                        ]
---  genCode (EventCodeBlock decl@(DataDecl d) abiInst eventInst genericInst) opts =
---    let sep = fromCharArray $ replicate 80 '-'
---        comment = "-- | " <> d.constructor
---        header = sep <> "\n" <> comment <> "\n" <> sep
---    in joinWith "\n\n" [ header
---                       , genCode decl opts
---                       , genCode abiInst opts
---                       , genCode eventInst opts
---                       , genCode genericInst opts
---                       ]
+  genCode (EventCodeBlock decl@(EventDataDecl d)) opts =
+    let sep = fromCharArray $ replicate 80 '-'
+        comment = "-- | " <> d.constructor
+        header = sep <> "\n" <> comment <> "\n" <> sep
+    in joinWith "\n\n" [ header
+                       , genCode decl opts
+                       --, genCode abiInst opts
+                       --, genCode eventInst opts
+                       --, genCode genericInst opts
+                       ]
 
 instance codeAbi :: Code Abi where
   genCode (Abi abi) opts = joinWith "\n\n" <<< map genCode' $ abi
@@ -402,7 +376,7 @@ instance codeAbi :: Code Abi where
       genCode' :: AbiType -> String
       genCode' at = case at of
         AbiFunction f -> genCode (funToFunctionCodeBlock f opts) opts
-  --      AbiEvent e -> genCode (eventToEventCodeBlock e) opts
+        AbiEvent e -> genCode (eventToEventCodeBlock e) opts
         _ -> ""
 
 --------------------------------------------------------------------------------
@@ -421,6 +395,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
+                        , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
                         , "import Network.Ethereum.Web3.Types (class EtherUnit, CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
