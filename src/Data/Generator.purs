@@ -228,51 +228,9 @@ instance codeEventDataDecl :: Code EventDataDecl where
                        ]
 
 
---instance codeEventDataDecl :: Code EventDataDecl where
---  genCode (EventDataDecl decl) _ =
---    let indexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.indexedTypes)
---        nonIndexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes)
---        recordType = 
-
-{-
-data ParserMethod =
-  ParserMethod { parserExpr :: String
-               }
-
-eventToParser :: SolidityEvent -> ParserMethod
-eventToParser ev@(SolidityEvent e) =
-  if length e.inputs == 0 then eventToParserNoArgs ev else eventToParserSomeArgs ev
-
-eventToParserNoArgs :: SolidityEvent -> ParserMethod
-eventToParserNoArgs ev@(SolidityEvent e) =
-  let DataDecl decl = eventToDataDecl ev
-  in ParserMethod { parserExpr : "pure " <> decl.constructor
-                  }
-
-eventToParserSomeArgs :: SolidityEvent -> ParserMethod
-eventToParserSomeArgs ev@(SolidityEvent e) =
-    let DataDecl decl = eventToDataDecl ev
-        starter = if length decl.factorTypes == 1
-                    then fromSingleton decl.constructor
-                    else fromTuple decl.constructor (length decl.factorTypes)
-    in ParserMethod { parserExpr: starter <> " <$> fromDataParser"
-                    }
-  where
-    fromSingleton c = "uncurry1 " <> c
-    fromTuple c n = "uncurry" <> show n <> " " <> c
-
-eventToEncodingInstance :: SolidityEvent -> AbiEncodingInstance
-eventToEncodingInstance ev@(SolidityEvent e) =
-  let ParserMethod m = eventToParser ev
-  in  AbiEncodingInstance { instanceType : capitalize e.name
-                          , instanceName : "abiEncoding" <> capitalize e.name
-                          , builder : "toDataBuilder = const mempty"
-                          , parser : "fromDataParser = " <> m.parserExpr
-                          }
-
 data EventGenericInstance =
   EventGenericInstance { instanceNames :: Array String
-                       , instanceTypes :: Array String 
+                       , instanceTypes :: Array String
                        , genericDefs :: Array String
                        , genericDeriving :: String
                        }
@@ -282,17 +240,43 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
     let headers = uncurry (\n t -> "instance " <> n <> " :: " <> t <> " where") <$> (zip i.instanceNames i.instanceTypes)
         eventGenerics = (\d -> "\t" <> d) <$> i.genericDefs
         instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
-    in joinWith "\n\n" $ i.genericDeriving : instances 
+    in joinWith "\n\n" $ i.genericDeriving : instances
 
 eventToEventGenericInstance :: SolidityEvent -> EventGenericInstance
 eventToEventGenericInstance ev@(SolidityEvent e) =
-  let DataDecl decl = eventToDataDecl ev
+  let EventDataDecl decl = eventToDataDecl ev
       capConst = capitalize decl.constructor
   in EventGenericInstance { instanceNames: (\n -> "eventGeneric" <> capConst <> n) <$> ["Show", "eq"]
                           , instanceTypes: (\t -> t <> " " <> capConst) <$> ["Show", "Eq"]
                           , genericDefs: ["show = GShow.genericShow", "eq = GEq.genericEq"]
                           , genericDeriving: "derive instance generic" <> capConst <> " :: G.Generic " <> capConst <> " _"
                           }
+
+data EventDecodeInstance =
+  EventDecodeInstance { indexedTuple :: String
+            , nonIndexedTuple :: String
+            , combinedType :: String
+            }
+
+eventToDecodeEventInstance :: SolidityEvent -> EventDecodeInstance
+eventToDecodeEventInstance event@(SolidityEvent ev) =
+    let (EventDataDecl decl) = eventToDataDecl event
+        indexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.indexedTypes)
+        nonIndexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes)
+   in EventDecodeInstance {indexedTuple: indexed, nonIndexedTuple: nonIndexed, combinedType: decl.constructor}
+  where
+    taggedFactor (Tuple label value) = label <> " :: " <> value
+
+instance codeEventDecodeInstance :: Code EventDecodeInstance where
+  codeGen (EventDecodeInstance ev) _ =
+    let indexedEventDecl = "instance indexedEvent" <> ev.combinedType <> " :: IndexedEvent " <> ev.indexed <> " " <> ev.nonIndexed <> " " <> ev.combinedType <> "where"
+        indexedEventBody = "isAnonymous _ = " <> show ev.anonymous
+        decodeEventDecl = "instance decodeEvent" <> ev.combinedType <> " :: DecodeEvent " <> ev.indexed <> " " ev.nonIndexed <> " " <> ev.combinedType
+   in joinWith "\n\n" [ joinWith "\n" [ indexedEventDecl
+                                      , "  " <> indexedEventBody
+                                      ]
+                      , decodeEventDecl
+                      ]
 
 data EventFilterInstance =
   EventFilterInstance { instanceName :: String
@@ -313,7 +297,7 @@ eventId (SolidityEvent e) =
 
 eventToEventFilterInstance :: SolidityEvent -> EventFilterInstance
 eventToEventFilterInstance ev@(SolidityEvent e) =
-  let DataDecl decl = eventToDataDecl ev
+  let EventDataDecl decl = eventToDataDecl ev
   in EventFilterInstance { instanceName: "eventFilter" <> capitalize decl.constructor
                          , instanceType: capitalize decl.constructor
                          , filterDef: "eventFilter _ addr = " <> mkFilterExpr "addr"
@@ -335,17 +319,17 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
       , "# _toBlock .~ Nothing"
       ]
     ]
--}
+
 
 eventToEventCodeBlock :: SolidityEvent -> CodeBlock
 eventToEventCodeBlock ev@(SolidityEvent e) =
-  EventCodeBlock (eventToDataDecl ev) -- (eventToEncodingInstance ev) (eventToEventFilterInstance ev) (eventToEventGenericInstance ev)
+  EventCodeBlock (eventToDataDecl ev) (eventToEventFilterInstance ev) (eventToDecodeEventInstance ev) (eventToEventGenericInstance ev)
 
 --------------------------------------------------------------------------------
 
 data CodeBlock =
     FunctionCodeBlock FunTypeDecl HelperFunction
-  | EventCodeBlock EventDataDecl -- AbiEncodingInstance EventFilterInstance EventGenericInstance
+  | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> CodeBlock
 funToFunctionCodeBlock f opts = FunctionCodeBlock (funToTypeDecl f opts) (funToHelperFunction f opts)
@@ -359,15 +343,15 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
                        , genCode decl opts
                        , genCode helper opts
                        ]
-  genCode (EventCodeBlock decl@(EventDataDecl d)) opts =
+  genCode (EventCodeBlock decl@(EventDataDecl d) filterInst eventInst genericInst) opts =
     let sep = fromCharArray $ replicate 80 '-'
         comment = "-- | " <> d.constructor
         header = sep <> "\n" <> comment <> "\n" <> sep
     in joinWith "\n\n" [ header
                        , genCode decl opts
-                       --, genCode abiInst opts
-                       --, genCode eventInst opts
-                       --, genCode genericInst opts
+                       , genCode filterInst opts
+                       , genCode eventInst opts
+                       , genCode genericInst opts
                        ]
 
 instance codeAbi :: Code Abi where
