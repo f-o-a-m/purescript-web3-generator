@@ -40,11 +40,10 @@ class Code a where
 -- | Utils
 --------------------------------------------------------------------------------
 
-toSelector :: SolidityFunction -> HexString
-toSelector (SolidityFunction f) =
+toSignature :: SolidityFunction -> String
+toSignature (SolidityFunction f) =
   let args = map (\i -> format i) f.inputs
-      HexString hx = sha3 $ f.name <> "(" <> joinWith "," args <> ")"
-  in HexString $ take 8 hx
+  in f.name <> "(" <> joinWith "," args <> ")"
 
 capitalize :: String -> String
 capitalize s =
@@ -94,21 +93,29 @@ toPSType s = case s of
 --------------------------------------------------------------------------------
 
 -- | Data declaration
-data DataDecl =
-  DataDecl { constructor :: String
-           , factorTypes :: Array String
-           }
+data FunTypeDecl =
+  FunTypeDecl { signature :: String
+              , factorTypes :: Array String
+              , typeName :: String
+              }
 
-funToDataDecl :: SolidityFunction -> GeneratorOptions -> DataDecl
-funToDataDecl (SolidityFunction f) opts =
-  DataDecl { constructor : capitalize $ opts.prefix <> f.name <> "Fn"
-           , factorTypes : map toPSType f.inputs
-           }
+funToTypeDecl :: SolidityFunction -> GeneratorOptions -> FunTypeDecl
+funToTypeDecl fun@(SolidityFunction f) opts =
+  FunTypeDecl { typeName : capitalize $ opts.prefix <> f.name <> "Fn"
+              , factorTypes : map toPSType f.inputs
+              , signature: toSignature fun
+              }
 
-instance codeDataDecl :: Code DataDecl where
-  genCode (DataDecl decl) _ =
-    "data " <> decl.constructor <> " = " <> decl.constructor <> " " <> joinWith " " decl.factorTypes
+instance codeDataDecl :: Code FunTypeDecl where
+  genCode (FunTypeDecl decl) _ =
+    let nArgs = length decl.factorTypes
+    in fold [ "type "
+            , decl.typeName
+            , " = "
+            , "Tagged (SProxy \"" <> decl.signature <> "\") (Tuple" <> show nArgs <> " " <> joinWith " " decl.factorTypes <> ")"
+            ]
 
+{-
 -- | Encoding instance
 data BuilderMethod =
   BuilderMethod { unpackExpr :: String
@@ -116,57 +123,52 @@ data BuilderMethod =
                 }
 funToBuilder :: SolidityFunction -> GeneratorOptions -> BuilderMethod
 funToBuilder fun@(SolidityFunction f) opts =
-  if length f.inputs == 0 
-  then funToBuilderNoArgs fun opts 
+  if length f.inputs == 0
+  then funToBuilderNoArgs fun opts
   else funToBuilderSomeArgs fun opts
 
 funToBuilderNoArgs :: SolidityFunction -> GeneratorOptions -> BuilderMethod
 funToBuilderNoArgs fun@(SolidityFunction f) opts =
-  let selectorBuilder = "HexString " <> "\"" <> (unHex $ toSelector fun) <> "\""
-      DataDecl decl = funToDataDecl fun opts
+  let FunTypeDecl decl = funToTypeDecl fun opts
   in BuilderMethod { unpackExpr : decl.constructor
-                   , builderExpr : selectorBuilder
+                   , builderExpr : funToBuilder fun opts
                    }
 
 funToBuilderSomeArgs :: SolidityFunction -> GeneratorOptions -> BuilderMethod
 funToBuilderSomeArgs fun@(SolidityFunction f) opts =
     let vars = mapWithIndex (\i _ -> "x" <> show i) f.inputs
-        DataDecl decl = funToDataDecl fun opts
-        selectorBuilder = "HexString " <> "\"" <> (unHex $ toSelector fun) <> "\""
+        FunTypeDecl decl = funToTypeDecl fun opts
         sep = " <> toDataBuilder "
-        restBuilder = if length vars == 1
-                         then " <> toDataBuilder " <> toSingleton (unsafePartial $ unsafeIndex vars 0)
-                         else " <> toDataBuilder " <> toTuple vars
+        restBuilder = toTuple vars
     in BuilderMethod { unpackExpr : "(" <> decl.constructor <> " " <> joinWith " " vars <> ")"
-                     , builderExpr : selectorBuilder <> restBuilder
+                     , builderExpr : restBuilder
                      }
   where
-    toSingleton x = "(Singleton " <> x <> ")"
     toTuple vars = "(Tuple" <> show (length vars) <> " " <> joinWith " " vars <> ")"
 
-data AbiEncodingInstance =
-  AbiEncodingInstance { instanceType :: String
-                      , instanceName :: String
-                      , builder :: String
-                      , parser :: String
-                      }
+data AbiEncodeInstance =
+  AbiEncodeInstance { instanceType :: String
+                    , instanceName :: String
+                    , builder :: String
+                    }
 
-funToEncodingInstance :: SolidityFunction -> GeneratorOptions -> AbiEncodingInstance
-funToEncodingInstance fun@(SolidityFunction f) opts =
+funToEncodeInstance :: SolidityFunction -> GeneratorOptions -> AbiEncodeInstance
+funToEncodeInstance fun@(SolidityFunction f) opts =
   let BuilderMethod m = funToBuilder fun opts
       DataDecl decl = funToDataDecl fun opts
-  in  AbiEncodingInstance { instanceType : decl.constructor
-                          , instanceName : "abiEncoding" <> decl.constructor
-                          , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
-                          , parser : "fromDataParser = fail \"Function type has no parser.\""
-                          }
+  in  AbiEncodeInstance { instanceType : decl.constructor
+                        , instanceName : "abiEncoding" <> decl.constructor
+                        , builder : "toDataBuilder " <> m.unpackExpr <> " = " <> m.builderExpr
+                        }
 
-instance codeAbiEncodingInstance :: Code AbiEncodingInstance where
-  genCode (AbiEncodingInstance i) _ =
-    let header = "instance " <> i.instanceName <> " :: ABIEncoding " <> i.instanceType <> " where"
+instance codeAbiEncodingInstance :: Code AbiEncodeInstance where
+  genCode (AbiEncodeInstance i) _ =
+    let header = "instance " <> i.instanceName <> " :: ABIEncode " <> i.instanceType <> " where"
         bldr = "\t" <> i.builder
         prsr = "\t" <> i.parser
     in joinWith "\n" [header, bldr, prsr]
+
+-}
 
 --------------------------------------------------------------------------------
 -- | Helper functions (asynchronous call/send)
@@ -184,7 +186,7 @@ data HelperFunction =
 
 funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
-    let (DataDecl decl) = funToDataDecl fun opts
+    let (FunTypeDecl decl) = funToTypeDecl fun opts
         sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
         constraints = if f.constant || not f.payable
                         then ["IsAsyncProvider p"]
@@ -205,7 +207,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
         offset = length stockVars
         conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
         helperTransport = toTransportPrefix f.constant $ length f.outputs
-        helperPayload = toPayload decl.constructor conVars
+        helperPayload = toPayload decl.typeName conVars
     in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
                       , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockArgsR, payloadArgs : conVars}
                       , payload : helperPayload
@@ -224,13 +226,13 @@ funToHelperFunction fun@(SolidityFunction f) opts =
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
   let fun = if isCall then "call" else "sendTx"
-      modifier = if isCall && outputCount == 1 then "unSingleton <$> " else ""
+      modifier = if isCall && outputCount == 1 then "unTuple1 <$> " else ""
   in modifier <> fun
 
 toPayload :: String -> Array String -> String
-toPayload constr args = case length args of
-  0 -> constr
-  _ -> "(" <> constr <> " " <> joinWith " " args <> ")"
+toPayload typeName args = case length args of
+  0 -> "Tuple0"
+  n -> "((tagged $ Tuple" <> show n <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
 
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
@@ -250,6 +252,8 @@ instance codeHelperFunction :: Code HelperFunction where
     in decl <> "\n" <> defL <> " = " <> defR
 
 --------------------------------------------------------------------------------
+
+{-
 
 eventToDataDecl :: SolidityEvent -> DataDecl
 eventToDataDecl (SolidityEvent ev) =
@@ -362,35 +366,35 @@ eventToEventCodeBlock :: SolidityEvent -> CodeBlock
 eventToEventCodeBlock ev@(SolidityEvent e) =
   EventCodeBlock (eventToDataDecl ev) (eventToEncodingInstance ev) (eventToEventFilterInstance ev) (eventToEventGenericInstance ev)
 
+-}
 --------------------------------------------------------------------------------
 
 data CodeBlock =
-    FunctionCodeBlock DataDecl AbiEncodingInstance HelperFunction
-  | EventCodeBlock DataDecl AbiEncodingInstance EventFilterInstance EventGenericInstance
+    FunctionCodeBlock FunTypeDecl HelperFunction
+  -- | EventCodeBlock DataDecl AbiEncodingInstance EventFilterInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> CodeBlock
-funToFunctionCodeBlock f opts = FunctionCodeBlock (funToDataDecl f opts) (funToEncodingInstance f opts) (funToHelperFunction f opts)
+funToFunctionCodeBlock f opts = FunctionCodeBlock (funToTypeDecl f opts) (funToHelperFunction f opts)
 
 instance codeFunctionCodeBlock :: Code CodeBlock where
-  genCode (FunctionCodeBlock decl@(DataDecl d) inst helper) opts =
+  genCode (FunctionCodeBlock decl@(FunTypeDecl d) helper) opts =
     let sep = fromCharArray $ replicate 80 '-'
-        comment = "-- | " <> d.constructor
+        comment = "-- | " <> d.typeName
         header = sep <> "\n" <> comment <> "\n" <> sep
     in joinWith "\n\n" [ header
                        , genCode decl opts
-                       , genCode inst opts
                        , genCode helper opts
                        ]
-  genCode (EventCodeBlock decl@(DataDecl d) abiInst eventInst genericInst) opts =
-    let sep = fromCharArray $ replicate 80 '-'
-        comment = "-- | " <> d.constructor
-        header = sep <> "\n" <> comment <> "\n" <> sep
-    in joinWith "\n\n" [ header
-                       , genCode decl opts
-                       , genCode abiInst opts
-                       , genCode eventInst opts
-                       , genCode genericInst opts
-                       ]
+--  genCode (EventCodeBlock decl@(DataDecl d) abiInst eventInst genericInst) opts =
+--    let sep = fromCharArray $ replicate 80 '-'
+--        comment = "-- | " <> d.constructor
+--        header = sep <> "\n" <> comment <> "\n" <> sep
+--    in joinWith "\n\n" [ header
+--                       , genCode decl opts
+--                       , genCode abiInst opts
+--                       , genCode eventInst opts
+--                       , genCode genericInst opts
+--                       ]
 
 instance codeAbi :: Code Abi where
   genCode (Abi abi) opts = joinWith "\n\n" <<< map genCode' $ abi
@@ -398,7 +402,7 @@ instance codeAbi :: Code Abi where
       genCode' :: AbiType -> String
       genCode' at = case at of
         AbiFunction f -> genCode (funToFunctionCodeBlock f opts) opts
-        AbiEvent e -> genCode (eventToEventCodeBlock e) opts
+  --      AbiEvent e -> genCode (eventToEventCodeBlock e) opts
         _ -> ""
 
 --------------------------------------------------------------------------------
@@ -409,6 +413,7 @@ type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Bo
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Functor.Tagged (Tagged, tagged)"
                         , "import Data.Generic.Rep as G"
                         , "import Data.Generic.Rep.Eq as GEq"
                         , "import Data.Generic.Rep.Show as GShow"
@@ -416,6 +421,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Lens ((.~))"
                         , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
+                        , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
                         , "import Network.Ethereum.Web3.Types (class EtherUnit, CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
