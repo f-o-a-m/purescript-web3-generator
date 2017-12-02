@@ -185,47 +185,47 @@
     "inputs": [
       {
         "indexed": false,
-        "name": "",
+        "name": "a",
         "type": "uint256"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "b",
         "type": "int256"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "c",
         "type": "bool"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "d",
         "type": "int224"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "e",
         "type": "bool[2]"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "f",
         "type": "int256[]"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "g",
         "type": "string"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "h",
         "type": "bytes16"
       },
       {
         "indexed": false,
-        "name": "",
+        "name": "i",
         "type": "bytes2[4][]"
       }
     ],
