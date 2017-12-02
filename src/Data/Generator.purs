@@ -17,10 +17,11 @@ import Data.Argonaut.Prisms (_Object)
 import Data.Array (filter, length, mapWithIndex, replicate, uncons, unsafeIndex, zip, zipWith, (:))
 import Data.Either (Either, either)
 import Data.Foldable (fold)
+import Data.Int (fromString)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
-import Data.Maybe (Maybe(..))
-import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
+import Data.Maybe (Maybe(..), fromJust)
+import Data.String (Pattern(..), drop, fromCharArray, joinWith, singleton, stripPrefix, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types.Sha3 (sha3)
@@ -67,7 +68,9 @@ makeDigits n =
         else "(" <> consed <> ")"
 
 vectorLength :: Int -> String
-vectorLength n = "N" <> show n
+vectorLength n = "(" <> go n <> ")"
+  where
+    go m = if m == 0 then "Z" else "S (" <> go (m - 1) <> ")"
 
 toPSType :: SolidityType -> String
 toPSType s = case s of
@@ -87,6 +90,15 @@ toPSType s = case s of
           then "(" <> "Vector " <> vectorLength head <> " " <> toPSType a' <> ")"
           else "(" <> "Vector " <> vectorLength head <> " " <> expandVector tail a' <> ")"
 
+{-
+unAliasLength :: String -> String
+unAliasLength s =
+    let n = unsafePartial fromJust $ do
+          n' <- stripPrefix (Pattern "N") s
+          fromString n'
+    in unpackLength n
+  where unpackLength n = if n == 0 then "Z" else "S (" <> unpackLength (n -1) <> ")"
+-}
 
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers
@@ -220,10 +232,8 @@ instance codeEventDataDecl :: Code EventDataDecl where
   genCode (EventDataDecl decl) _ =
     let recordField (Tuple label val) = label <> " :: " <> val
         newtypeDef = "newtype " <> decl.constructor <> " = " <> decl.constructor <> " {" <> joinWith "," (map recordField decl.recordType) <> "}"
-        genericInstanceDecl = "derive instance generic" <> decl.constructor <> " :: G.Generic " <> decl.constructor <> " _"
         newtypeInstanceDecl = "derive instance newtype" <> decl.constructor <> " :: Newtype " <> decl.constructor <> " _"
     in joinWith "\n\n" [ newtypeDef
-                       , genericInstanceDecl
                        , newtypeInstanceDecl
                        ]
 
@@ -254,29 +264,28 @@ eventToEventGenericInstance ev@(SolidityEvent e) =
 
 data EventDecodeInstance =
   EventDecodeInstance { indexedTuple :: String
-            , nonIndexedTuple :: String
-            , combinedType :: String
-            }
-
-eventToDecodeEventInstance :: SolidityEvent -> EventDecodeInstance
-eventToDecodeEventInstance event@(SolidityEvent ev) =
-    let (EventDataDecl decl) = eventToDataDecl event
-        indexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.indexedTypes)
-        nonIndexed = "Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes)
-   in EventDecodeInstance {indexedTuple: indexed, nonIndexedTuple: nonIndexed, combinedType: decl.constructor}
-  where
-    taggedFactor (Tuple label value) = label <> " :: " <> value
+                      , nonIndexedTuple :: String
+                      , combinedType :: String
+                      , anonymous :: Boolean
+                      }
 
 instance codeEventDecodeInstance :: Code EventDecodeInstance where
-  codeGen (EventDecodeInstance ev) _ =
-    let indexedEventDecl = "instance indexedEvent" <> ev.combinedType <> " :: IndexedEvent " <> ev.indexed <> " " <> ev.nonIndexed <> " " <> ev.combinedType <> "where"
+  genCode (EventDecodeInstance ev) _ =
+    let indexedEventDecl = "instance indexedEvent" <> ev.combinedType <> " :: IndexedEvent " <> ev.indexedTuple <> " " <> ev.nonIndexedTuple <> " " <> ev.combinedType <> " where"
         indexedEventBody = "isAnonymous _ = " <> show ev.anonymous
-        decodeEventDecl = "instance decodeEvent" <> ev.combinedType <> " :: DecodeEvent " <> ev.indexed <> " " ev.nonIndexed <> " " <> ev.combinedType
    in joinWith "\n\n" [ joinWith "\n" [ indexedEventDecl
                                       , "  " <> indexedEventBody
                                       ]
-                      , decodeEventDecl
                       ]
+eventToDecodeEventInstance :: SolidityEvent -> EventDecodeInstance
+eventToDecodeEventInstance event@(SolidityEvent ev) =
+    let (EventDataDecl decl) = eventToDataDecl event
+        indexed = "(Tuple" <> show (length decl.indexedTypes) <> " " <> joinWith " " (map taggedFactor decl.indexedTypes) <> ")"
+        nonIndexed = "(Tuple" <> show (length decl.nonIndexedTypes) <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes) <> ")"
+   in EventDecodeInstance {indexedTuple: indexed, nonIndexedTuple: nonIndexed, combinedType: decl.constructor, anonymous: ev.anonymous}
+  where
+    taggedFactor (Tuple label value) = "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
+
 
 data EventFilterInstance =
   EventFilterInstance { instanceName :: String
@@ -375,9 +384,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Generic.Rep as G"
                         , "import Data.Generic.Rep.Eq as GEq"
                         , "import Data.Generic.Rep.Show as GShow"
-                        , "import Data.Monoid (mempty)"
                         , "import Data.Lens ((.~))"
-                        , "import Text.Parsing.Parser (fail)"
                         , "import Data.Maybe (Maybe(..))"
                         , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
