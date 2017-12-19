@@ -17,6 +17,7 @@
         "console",
         "psci-support",
         "tagged",
-        "web3"
+        "web3",
+        "machines"
     ]
 }

@@ -172,7 +172,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                       , quantifiedVars: quantifiedVars
                       }
   where
-    callSigPrefix = ["Address", "Maybe Address", "CallMode"]
+    callSigPrefix = ["Address", "Maybe Address", "ChainCursor"]
     sendSigPrefix = if f.payable
                       then ["Maybe Address", "Address", "u"]
                       else ["Maybe Address", "Address"]
@@ -322,8 +322,6 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
     , joinWith "\n\t\t"
       [ "# _address .~ Just " <> addr
       , "# _topics .~ Just [" <> eventIdStr <> indexedVals <> "]"
-      , "# _fromBlock .~ Nothing"
-      , "# _toBlock .~ Nothing"
       ]
     ]
 
@@ -387,7 +385,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
-                        , "import Network.Ethereum.Web3.Types (class EtherUnit, CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types (class EtherUnit, ChainCursor(..), Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
