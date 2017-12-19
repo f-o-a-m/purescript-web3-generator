@@ -17,20 +17,18 @@ import Data.Argonaut.Prisms (_Object)
 import Data.Array (filter, length, mapWithIndex, replicate, uncons, unsafeIndex, zip, zipWith, (:))
 import Data.Either (Either, either)
 import Data.Foldable (fold)
-import Data.Int (fromString)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
-import Data.Maybe (Maybe(..), fromJust)
-import Data.String (Pattern(..), drop, fromCharArray, joinWith, singleton, stripPrefix, take, toCharArray, toLower, toUpper)
+import Data.Maybe (Maybe(Just))
+import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types.Sha3 (sha3)
-import Network.Ethereum.Web3.Types.Types (HexString(..), unHex)
+import Network.Ethereum.Web3.Types.Types (HexString, unHex)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Partial.Unsafe (unsafePartial)
-
 
 --------------------------------------------------------------------------------
 
@@ -174,7 +172,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                       , quantifiedVars: quantifiedVars
                       }
   where
-    callSigPrefix = ["Address", "Maybe Address", "CallMode"]
+    callSigPrefix = ["Address", "Maybe Address", "ChainCursor"]
     sendSigPrefix = if f.payable
                       then ["Maybe Address", "Address", "u"]
                       else ["Maybe Address", "Address"]
@@ -324,8 +322,6 @@ eventToEventFilterInstance ev@(SolidityEvent e) =
     , joinWith "\n\t\t"
       [ "# _address .~ Just " <> addr
       , "# _topics .~ Just [" <> eventIdStr <> indexedVals <> "]"
-      , "# _fromBlock .~ Nothing"
-      , "# _toBlock .~ Nothing"
       ]
     ]
 
@@ -336,6 +332,10 @@ eventToEventCodeBlock ev@(SolidityEvent e) =
 
 --------------------------------------------------------------------------------
 
+mkComment :: Array String -> String
+mkComment cs = let sep = (fromCharArray $ replicate 80 '-') <> "\n"
+               in  sep <> (joinWith "\n" $ map (\s -> "-- | " <> s) cs) <> "\n" <> sep
+
 data CodeBlock =
     FunctionCodeBlock FunTypeDecl HelperFunction
   | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
@@ -345,18 +345,14 @@ funToFunctionCodeBlock f opts = FunctionCodeBlock (funToTypeDecl f opts) (funToH
 
 instance codeFunctionCodeBlock :: Code CodeBlock where
   genCode (FunctionCodeBlock decl@(FunTypeDecl d) helper) opts =
-    let sep = fromCharArray $ replicate 80 '-'
-        comment = "-- | " <> d.typeName
-        header = sep <> "\n" <> comment <> "\n" <> sep
+    let header = mkComment [d.typeName]
     in joinWith "\n\n" [ header
                        , genCode decl opts
                        , genCode helper opts
                        ]
   genCode (EventCodeBlock decl@(EventDataDecl d) filterInst eventInst genericInst) opts =
-    let sep = fromCharArray $ replicate 80 '-'
-        comment = "-- | " <> d.constructor
-        header = sep <> "\n" <> comment <> "\n" <> sep
-    in joinWith "\n\n" [ header
+    let header = mkComment [d.constructor]
+    in joinWith "\n\n" [ header 
                        , genCode decl opts
                        , genCode filterInst opts
                        , genCode eventInst opts
@@ -389,7 +385,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
-                        , "import Network.Ethereum.Web3.Types (class EtherUnit, CallMode, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types (class EtherUnit, ChainCursor(..), Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
@@ -420,8 +416,9 @@ writeCodeFromAbi opts abiFile destFile = do
     ejson <- jsonParser <$> readTextFile UTF8 abiFile
     json <- either (throwError <<< error) pure ejson
     (abi :: Abi) <- either (throwError <<< error) pure $ parseAbi opts json
-    writeTextFile UTF8 destFile $
-      genPSModuleStatement opts destFile <> "\n" <> imports <> "\n" <> genCode abi opts
+    writeTextFile UTF8 destFile $ genPSModuleStatement opts destFile <> "\n"
+      <> imports <> "\n" 
+      <> genCode abi opts
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String Abi
 parseAbi {truffle} abiJson = case truffle of
@@ -430,4 +427,9 @@ parseAbi {truffle} abiJson = case truffle of
           in note "truffle artifact missing abi field" mabi >>= decodeJson
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
-genPSModuleStatement opts fp = "module Contracts." <> basenameWithoutExt fp ".purs" <> " where\n"
+genPSModuleStatement opts fp = comment <> "\n" 
+  <> "module Contracts." 
+  <> basenameWithoutExt fp ".purs" 
+  <> " where\n"
+    where
+  comment = mkComment [basenameWithoutExt fp ".purs"]
