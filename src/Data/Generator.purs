@@ -181,7 +181,7 @@ funToHelperFunction fun@(SolidityFunction f) opts =
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
   let fun = if isCall then "call" else "sendTx"
-      modifier = if isCall && outputCount == 1 then "unTuple1 <$> " else ""
+      modifier = if isCall && outputCount == 1 then "map unTuple1 <$> " else ""
   in modifier <> fun
 
 toPayload :: String -> Array String -> String
@@ -191,12 +191,14 @@ toPayload typeName args =
 
 toReturnType :: Boolean -> Array String -> String
 toReturnType constant outputs =
-  if not constant
-     then "Web3 p e HexString"
-     else "Web3 p e " <> case length outputs of
-       0 -> "()"
-       1 -> unsafePartial $ unsafeIndex outputs 0
-       _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
+    if not constant
+       then "Web3 p e HexString"
+       else "Web3 p e " <> "(Either CallError " <> retType outputs <> ")"
+  where
+    retType os = case length outputs of
+      0 -> "()"
+      1 -> unsafePartial $ unsafeIndex outputs 0
+      _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (HelperFunction h) _ =
@@ -376,6 +378,7 @@ type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Bo
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"
+                        , "import Data.Either (Either)"
                         , "import Data.Functor.Tagged (Tagged, tagged)"
                         , "import Data.Generic.Rep as G"
                         , "import Data.Generic.Rep.Eq as GEq"
@@ -385,7 +388,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
-                        , "import Network.Ethereum.Web3.Types (class EtherUnit, ChainCursor(..), Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types (class EtherUnit, ChainCursor(..), CallError, Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
