@@ -143,28 +143,17 @@ funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
     let (FunTypeDecl decl) = funToTypeDecl fun opts
         sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
-        constraints = if f.constant || not f.payable
-                        then ["IsAsyncProvider p"]
-                        else ["IsAsyncProvider p", "EtherUnit u"]
-        quantifiedVars = if f.constant || not f.payable
-                            then ["e", "p"]
-                            else ["e", "p", "u"]
-        stockVars = if not f.payable && not f.constant
-                       then ["x0","x1"]
-                       else if f.constant
-                              then ["x0", "x1", "cm"]
-                              else ["x0", "x1", "u"]
-        stockArgsR = if not f.payable && not f.constant
-                        then ["x0","x1", "noPay"]
-                        else if f.constant
-                               then ["x0", "x1", "cm"]
-                               else ["x0", "x1", "u"]
+        constraints = ["IsAsyncProvider p"]
+        quantifiedVars = ["e", "p"]
+        stockVars = if f.constant
+                      then ["x0", "cm"]
+                      else ["x0" ]
         offset = length stockVars
         conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
         helperTransport = toTransportPrefix f.constant $ length f.outputs
         helperPayload = toPayload decl.typeName conVars
     in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
-                      , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockArgsR, payloadArgs : conVars}
+                      , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockVars, payloadArgs : conVars}
                       , payload : helperPayload
                       , transport : helperTransport
                       , constraints: constraints
@@ -172,11 +161,8 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                       , quantifiedVars: quantifiedVars
                       }
   where
-    callSigPrefix = ["Address", "Maybe Address", "ChainCursor"]
-    sendSigPrefix = if f.payable
-                      then ["Maybe Address", "Address", "u"]
-                      else ["Maybe Address", "Address"]
-
+    callSigPrefix = ["TransactionOptions", "ChainCursor"]
+    sendSigPrefix = ["TransactionOptions"]
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
@@ -385,7 +371,7 @@ imports = joinWith "\n" [ "import Prelude"
                         , "import Data.Newtype (class Newtype)"
                         , "import Data.Symbol (SProxy)"
                         , "import Network.Ethereum.Web3.Types.Types (HexString(..))"
-                        , "import Network.Ethereum.Web3.Types (class EtherUnit, ChainCursor(..), Web3, BigNumber, _address, _topics, _fromBlock, _toBlock, defaultFilter, noPay)"
+                        , "import Network.Ethereum.Web3.Types (ChainCursor(..), Web3, BigNumber, TransactionOptions, _address, _topics, _fromBlock, _toBlock, defaultFilter)"
                         , "import Network.Ethereum.Web3.Provider (class IsAsyncProvider)"
                         , "import Network.Ethereum.Web3.Contract (class EventFilter, call, sendTx)"
                         , "import Network.Ethereum.Web3.Solidity"
