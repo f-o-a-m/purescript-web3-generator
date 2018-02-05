@@ -211,9 +211,8 @@ funToHelperFunction fun@(SolidityFunction f) opts = do
     conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
   helperTransport <- toTransportPrefix f.constant $ length f.outputs
   helperPayload <- toPayload decl.typeName conVars
-  outputs <- for f.outputs toPSType
   inputs <- for f.inputs toPSType
-  returnType <- toReturnType f.constant outputs
+  returnType <- toReturnType f.constant f.outputs
   pure $
     HelperFunction
       { signature : sigPrefix <> inputs <> [returnType]
@@ -249,14 +248,15 @@ toPayload typeName args = do
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
   pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
 
-toReturnType :: Boolean -> Array String -> Imported String
-toReturnType constant outputs = do
+toReturnType :: Boolean -> Array SolidityType -> Imported String
+toReturnType constant outputs' = do
   import' "Network.Ethereum.Web3.Types.Types" [IType "Web3"]
   if not constant
     then do
       import' "Network.Ethereum.Web3.Types.Types" [IType "HexString"]
       pure "Web3 p e HexString"
     else do
+      outputs <- for outputs' toPSType
       out <- case length outputs of
         0 -> pure "Unit"
         1 -> pure $ unsafePartial $ unsafeIndex outputs 0
