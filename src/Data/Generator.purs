@@ -133,7 +133,6 @@ data HelperFunction =
                             , constraints :: Array String
                             , quantifiedVars :: Array String
                             , whereClause :: String
-                            , rlProxy :: String
                             }
 
 funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> HelperFunction
@@ -176,7 +175,6 @@ funToHelperFunction' fun@(SolidityFunction f) opts =
                                , constraints: constraints
                                , quantifiedVars: quantifiedVars
                                , whereClause: genCode (whereHelper decl sigPrefix f.inputs returnType) opts {indentationLevel = opts.indentationLevel + 4}
-                               , rlProxy: toOrderProxy f.inputs
                                }
   where
     callSigPrefix = ["TransactionOptions", "ChainCursor"]
@@ -189,15 +187,6 @@ funToHelperFunction' fun@(SolidityFunction f) opts =
                                                                    , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
                                                                    , signature = pre <> map tagInput is <> [ret]
                                                                    }
-
-toOrderProxy :: Array FunctionInput -> String
-toOrderProxy is = "(RLProxy :: RLProxy ( " <> go is <> " ))"
-  where
-    go is' = case uncons is' of
-      Nothing -> "Nil"
-      Just {head, tail} ->
-        let (FunctionInput fi) = head
-        in "Cons " <> "\"" <> fi.name <> "\"" <> " " <> toPSType fi.type <> " ("<> go tail <> ")"
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
@@ -237,7 +226,7 @@ instance codeHelperFunction :: Code HelperFunction where
         quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
         decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " h.unpackExpr.stockArgs
-        defR = "uncurryFields " <> h.rlProxy <> " r $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgsR
+        defR = "uncurryFields " <> " r $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgsR
     in fold [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", h.whereClause]
 
 --------------------------------------------------------------------------------
