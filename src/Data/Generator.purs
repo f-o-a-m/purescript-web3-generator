@@ -287,7 +287,9 @@ toTransportPrefix isCall outputCount = do
   modifier <- if isCall && outputCount == 1
     then do
       import' "Network.Ethereum.Web3.Solidity" [IVal "unTuple1"]
-      pure "unTuple1 <$> "
+      pure $ if isCall
+               then "map unTuple1 <$> "
+               else "unTuple1 <$> "
     else
       pure ""
   pure $ modifier <> fun
@@ -313,6 +315,8 @@ toReturnType constant outputs' = do
       import' "Network.Ethereum.Web3.Types.Types" [IType "HexString"]
       pure "Web3 p e HexString"
     else do
+      import' "Network.Ethereum.Web3.Types" [IType "CallError"]
+      import' "Data.Either" [IType "Either"]
       outputs <- for outputs' toPSType
       out <- case length outputs of
         0 -> pure "Unit"
@@ -320,8 +324,8 @@ toReturnType constant outputs' = do
         _ -> do
           let tupleType = "Tuple" <> show (length outputs)
           import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
-          pure $ "(" <> tupleType <> " " <> joinWith " " outputs <> ")"
-      pure $ "Web3 p e " <> out
+          pure $ tupleType <> " " <> joinWith " " outputs
+      pure $ "Web3 p e " <> "(Either CallError (" <> out <> "))"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (CurriedHelperFunction h) opts =
