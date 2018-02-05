@@ -32,5 +32,5 @@ simpleStorageParserSpec =
       isRight eabi `shouldEqual` true
 
     it "can generate an encoding instance" do
-      generatePS {jsonDir : "./abi-data/truffle/build/contracts", pursDir : "./src", truffle:true, prefix: "" }
-      generatePS {jsonDir : "./abi-data/abis", pursDir : "./src", truffle:false, prefix: "" }
+      generatePS {jsonDir : "./abi-data/truffle/build/contracts", pursDir : "./src", truffle:true, prefix: "", indentationLevel: 0 }
+      generatePS {jsonDir : "./abi-data/abis", pursDir : "./src", truffle:false, prefix: "", indentationLevel: 0 }

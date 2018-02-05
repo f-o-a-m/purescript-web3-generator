@@ -10,13 +10,13 @@ import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), FunctionInput(..), format)
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, replicate, uncons, unsafeIndex, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, replicate, uncons, unsafeIndex, zip, zipWith, (:), null)
 import Data.Either (Either, either)
-import Data.Foldable (fold)
+import Data.Foldable (fold, all)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Maybe (Maybe(Just))
@@ -88,15 +88,6 @@ toPSType s = case s of
           then "(" <> "Vector " <> vectorLength head <> " " <> toPSType a' <> ")"
           else "(" <> "Vector " <> vectorLength head <> " " <> expandVector tail a' <> ")"
 
-{-
-unAliasLength :: String -> String
-unAliasLength s =
-    let n = unsafePartial fromJust $ do
-          n' <- stripPrefix (Pattern "N") s
-          fromString n'
-    in unpackLength n
-  where unpackLength n = if n == 0 then "Z" else "S (" <> unpackLength (n -1) <> ")"
--}
 
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers
@@ -112,7 +103,7 @@ data FunTypeDecl =
 funToTypeDecl :: SolidityFunction -> GeneratorOptions -> FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) opts =
   FunTypeDecl { typeName : capitalize $ opts.prefix <> f.name <> "Fn"
-              , factorTypes : map toPSType f.inputs
+              , factorTypes : map toPSType (map (\(FunctionInput fi) -> fi.type) f.inputs)
               , signature: toSignature fun
               }
 
@@ -130,18 +121,24 @@ instance codeDataDecl :: Code FunTypeDecl where
 --------------------------------------------------------------------------------
 
 data HelperFunction =
-  HelperFunction { signature :: Array String
-                 , unpackExpr :: {name :: String, stockArgs :: Array String, stockArgsR :: Array String, payloadArgs :: Array String}
-                 , payload :: String
-                 , transport :: String
-                 , constraints :: Array String
-                 , payable :: Boolean
-                 , quantifiedVars :: Array String
-                 }
+    CurriedHelperFunction { signature :: Array String
+                          , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
+                          , payload :: String
+                          , transport :: String
+                          , constraints :: Array String
+                          , quantifiedVars :: Array String
+                          }
+  | UnCurriedHelperFunction { signature :: Array String
+                            , unpackExpr :: {name :: String, stockArgs :: Array String}
+                            , constraints :: Array String
+                            , quantifiedVars :: Array String
+                            , whereClause :: String
+                            }
 
 funToHelperFunction :: SolidityFunction -> GeneratorOptions -> HelperFunction
 funToHelperFunction fun@(SolidityFunction f) opts =
     let (FunTypeDecl decl) = funToTypeDecl fun opts
+        inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
         sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
         constraints = ["IsAsyncProvider p"]
         quantifiedVars = ["e", "p"]
@@ -149,20 +146,44 @@ funToHelperFunction fun@(SolidityFunction f) opts =
                       then ["x0", "cm"]
                       else ["x0" ]
         offset = length stockVars
-        conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
+        conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) inputs'
         helperTransport = toTransportPrefix f.constant $ length f.outputs
         helperPayload = toPayload decl.typeName conVars
-    in HelperFunction { signature : sigPrefix <> map toPSType f.inputs <> [toReturnType f.constant $ map toPSType f.outputs]
-                      , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockVars, payloadArgs : conVars}
-                      , payload : helperPayload
-                      , transport : helperTransport
-                      , constraints: constraints
-                      , payable: f.payable
-                      , quantifiedVars: quantifiedVars
-                      }
+    in CurriedHelperFunction { signature : sigPrefix <> map toPSType inputs' <> [toReturnType f.constant $ map toPSType f.outputs]
+                             , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, payloadArgs : conVars}
+                             , payload : helperPayload
+                             , transport : helperTransport
+                             , constraints: constraints
+                             , quantifiedVars: quantifiedVars
+                             }
   where
     callSigPrefix = ["TransactionOptions", "ChainCursor"]
     sendSigPrefix = ["TransactionOptions"]
+
+funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> HelperFunction
+funToHelperFunction' fun@(SolidityFunction f) opts =
+    let (FunTypeDecl decl) = funToTypeDecl fun opts
+        sigPrefix = if f.constant then callSigPrefix else sendSigPrefix
+        constraints = ["IsAsyncProvider p"]
+        quantifiedVars = ["e", "p"]
+        stockVars = if f.constant
+                      then ["x0", "cm"]
+                      else ["x0" ]
+    in UnCurriedHelperFunction { signature : sigPrefix <> [recordInput f.inputs] <> [toReturnType f.constant $ map toPSType f.outputs]
+                               , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars}
+                               , constraints: constraints
+                               , quantifiedVars: quantifiedVars
+                               , whereClause: genCode whereHelper opts {indentationLevel = indentationLevel + 4}
+                               }
+  where
+    callSigPrefix = ["TransactionOptions", "ChainCursor"]
+    sendSigPrefix = ["TransactionOptions"]
+    recordInput fis = "{ " <> joinWith ", " (map (\(FunctionInput fi) -> show fi.name <> ":: " <> show fi.type) fis) <> " }"
+    whereHelper = unsafePartial $ case funToHelperFunction fun opts of
+      CurriedHelperFunction helper -> CurriedHelperFunction helper { constraints = []
+                                                                   , quantifiedVars = []
+                                                                   , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
+                                                                   }
 
 toTransportPrefix :: Boolean -> Int -> String
 toTransportPrefix isCall outputCount =
@@ -185,12 +206,22 @@ toReturnType constant outputs =
        _ -> "(Tuple" <> show (length outputs) <> " " <> joinWith " " outputs <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
-  genCode (HelperFunction h) _ =
+  genCode (CurriedHelperFunction h) opts =
     let constraints = fold $ map (\c -> c <> " => ") h.constraints
-        decl = h.unpackExpr.name <> " :: " <> "forall " <> joinWith " " h.quantifiedVars <> " . " <> constraints <> joinWith " -> " h.signature
+        quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
+        decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
-        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgsR <> " " <> h.payload
-    in decl <> "\n" <> defL <> " = " <> defR
+        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
+    in fold $ map (\s -> indentation <> s) [decl <> "\n", defL <> " = " <> defR]
+    where
+      indentation = fold $ replicate opts.indentationLevel " "
+  genCode (UnCurriedHelperFunction h) _ =
+    let constraints = fold $ map (\c -> c <> " => ") h.constraints
+        quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
+        decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
+        defL = h.unpackExpr.name <> " " <> joinWith " " h.unpackExpr.stockArgs
+        defR = "uncurryFields $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgs
+    in fold [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", <> h.whereClause]
 
 --------------------------------------------------------------------------------
 
@@ -327,7 +358,12 @@ data CodeBlock =
   | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> CodeBlock
-funToFunctionCodeBlock f opts = FunctionCodeBlock (funToTypeDecl f opts) (funToHelperFunction f opts)
+funToFunctionCodeBlock fun@(SolidityFunction f) opts = FunctionCodeBlock (funToTypeDecl fun opts) $
+    if isUnCurried f
+      then funToHelperFunction' fun opts
+      else funToHelperFunction fun opts
+  where
+    isUnCurried f = all (\(FunctionInput fi) -> fi.name /= "") f.inputs && not (null f.inputs)
 
 instance codeFunctionCodeBlock :: Code CodeBlock where
   genCode (FunctionCodeBlock decl@(FunTypeDecl d) helper) opts =
@@ -358,7 +394,7 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
-type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean, prefix :: String}
+type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean, prefix :: String, indentationLevel: Int}
 
 imports :: String
 imports = joinWith "\n" [ "import Prelude"

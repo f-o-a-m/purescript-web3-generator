@@ -14,6 +14,7 @@ import Data.Generic (class Generic, gShow)
 import Data.Int (fromString)
 import Data.Maybe (Maybe(..), maybe)
 import Data.String (fromCharArray)
+import Data.Tuple (Tuple(..))
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
 import Text.Parsing.StringParser.Combinators (lookAhead, choice, many1Till, optionMaybe, many1)
 import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
@@ -141,9 +142,31 @@ instance decodeJsonSolidityType :: DecodeJson SolidityType where
 -- | Solidity Function Parser
 --------------------------------------------------------------------------------
 
+newtype FunctionInput =
+  FunctionInput { name :: String
+                , type :: SolidityType
+                }
+
+derive instance genericFunctionInput :: Generic FunctionInput
+
+instance showFunctionInput :: Show FunctionInput where
+  show = gShow
+
+instance formatInput :: Format FunctionInput where
+  format (FunctionInput fi) = format fi.type
+
+instance decodeFunctionInput :: DecodeJson FunctionInput where
+  decodeJson json = do
+    obj <- decodeJson json
+    n <- obj .? "name"
+    t <- obj .? "type"
+    case parseSolidityType t of
+      Left err -> Left $ "Failed to parse SolidityType " <> t <> " : "  <> err
+      Right typ -> Right $ FunctionInput {type: typ, name: n}
+
 data SolidityFunction =
   SolidityFunction { name :: String
-                   , inputs :: Array SolidityType
+                   , inputs :: Array FunctionInput
                    , outputs :: Array SolidityType
                    , constant :: Boolean
                    , payable :: Boolean
@@ -153,7 +176,6 @@ derive instance genericSolidityFunction :: Generic SolidityFunction
 
 instance showSolidityFunction :: Show SolidityFunction where
   show = gShow
-
 
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
