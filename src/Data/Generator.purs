@@ -498,7 +498,14 @@ instance codeAbi :: Code Abi where
       AbiEvent e -> do
         eventCodeBlock <- eventToEventCodeBlock e
         genCode eventCodeBlock opts
-      _ ->
+      AbiConstructor _ ->
+        -- Constructor is only called when the contract is deployed
+        -- now currently the library doesn't handle contract deployments very well.
+        pure ""
+      AbiFallback _ ->
+        -- Fallback is a function that gets called in case someone
+        -- sends ether to the contract with no function specified
+        -- so it's like, you would never call it on purpose, so we ignore it.
         pure ""
     pure $ newLine2 codes
 
