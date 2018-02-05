@@ -207,14 +207,15 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
     else
       pure ["TransactionOptions"]
   let
+    var = if isWhereClause then "y" else "x"
     constraints = ["IsAsyncProvider p"]
     quantifiedVars = ["e", "p"]
     stockVars = if f.constant
-                  then ["x0", "cm"]
-                  else ["x0"]
+                  then [var <> "0", "cm"]
+                  else [var <> "0"]
     offset = length stockVars
     inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
-    conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) inputs'
+    conVars = mapWithIndex (\i _ -> var <> show (offset + i)) inputs'
   helperTransport <- toTransportPrefix f.constant $ length f.outputs
   helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
@@ -332,13 +333,14 @@ instance codeHelperFunction :: Code HelperFunction where
     in pure <<< fold $ map (\s -> indentation <> s) [decl <> "\n", defL <> " = " <> defR]
     where
       indentation = fold $ replicate opts.indentationLevel " "
-  genCode (UnCurriedHelperFunction h) _ =
+  genCode (UnCurriedHelperFunction h) _ = do
+    import' "Network.Ethereum.Web3.Contract.Internal" [IVal "uncurryFields"]
     let constraints = fold $ map (\c -> c <> " => ") h.constraints
         quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
         decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " h.unpackExpr.stockArgs
         defR = "uncurryFields " <> " r $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgsR
-    in pure <<< fold $ [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", h.whereClause]
+    pure <<< fold $ [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", h.whereClause]
 
 --------------------------------------------------------------------------------
 
