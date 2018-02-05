@@ -324,8 +324,8 @@ toReturnType constant outputs' = do
         _ -> do
           let tupleType = "Tuple" <> show (length outputs)
           import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
-          pure $ tupleType <> " " <> joinWith " " outputs
-      pure $ "Web3 p e " <> "(Either CallError (" <> out <> "))"
+          pure $ "(" <> tupleType <> " " <> joinWith " " outputs <> ")"
+      pure $ "Web3 p e " <> "(Either CallError " <> out <> ")"
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (CurriedHelperFunction h) opts =
