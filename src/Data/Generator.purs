@@ -11,20 +11,20 @@ import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Writer (Writer, runWriter, tell)
-import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, nub, replicate, sort, uncons, unsafeIndex, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, nub, null, replicate, sort, uncons, unsafeIndex, zip, zipWith, (:))
 import Data.Either (Either, either)
-import Data.Foldable (fold, foldl)
+import Data.Foldable (all, fold, foldl)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard, mempty)
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
-import Data.Traversable (for)
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types.Sha3 (sha3)
 import Network.Ethereum.Web3.Types.Types (HexString, unHex)
@@ -37,7 +37,7 @@ import Partial.Unsafe (unsafePartial)
 type ModuleName = String
 type ModuleImports = Array ModuleImport
 
-data ModuleImport 
+data ModuleImport
   = IType String
   | ITypeCtr String
   | ITypeOp String
@@ -126,7 +126,6 @@ toPSType s = case s of
       t <- toPSType a
       pure $ "(" <> "Array " <> t <> ")"
   where
-  -- MARK
   expandVector ns' a' = unsafePartial $ case uncons ns' of
     Just {head, tail} -> do
       l <- vectorLength head
@@ -152,8 +151,9 @@ data FunTypeDecl =
 
 funToTypeDecl :: SolidityFunction -> GeneratorOptions -> Imported FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) opts = do
-  factorTypes <- for f.inputs toPSType
-  pure $ 
+  factorTypes <- for f.inputs $ \(FunctionInput fi) ->
+    toPSType $ fi.type
+  pure $
     FunTypeDecl
       { typeName : capitalize $ opts.prefix <> f.name <> "Fn"
       , factorTypes
@@ -168,7 +168,7 @@ instance codeDataDecl :: Code FunTypeDecl where
     import' "Data.Functor.Tagged" [IType "Tagged"]
     import' "Data.Symbol" [IType "SProxy"]
     import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
-    pure $ 
+    pure $
       fold
         ["type "
         , decl.typeName
@@ -181,52 +181,103 @@ instance codeDataDecl :: Code FunTypeDecl where
 --------------------------------------------------------------------------------
 
 data HelperFunction =
-  HelperFunction { signature :: Array String
-                 , unpackExpr :: {name :: String, stockArgs :: Array String, stockArgsR :: Array String, payloadArgs :: Array String}
-                 , payload :: String
-                 , transport :: String
-                 , constraints :: Array String
-                 , payable :: Boolean
-                 , quantifiedVars :: Array String
-                 }
+    CurriedHelperFunction { signature :: Array String
+                          , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
+                          , payload :: String
+                          , transport :: String
+                          , constraints :: Array String
+                          , quantifiedVars :: Array String
+                          }
+  | UnCurriedHelperFunction { signature :: Array String
+                            , unpackExpr :: {name :: String, stockArgs :: Array String, stockArgsR :: Array String}
+                            , constraints :: Array String
+                            , quantifiedVars :: Array String
+                            , whereClause :: String
+                            }
 
-funToHelperFunction :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
-funToHelperFunction fun@(SolidityFunction f) opts = do
+funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Imported HelperFunction
+funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   (FunTypeDecl decl) <- funToTypeDecl fun opts
   import' "Network.Ethereum.Web3.Provider" [IClass "IsAsyncProvider"]
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
-  sigPrefix <- if f.constant 
+  sigPrefix <- if f.constant
     then do
       import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
-      pure ["TransactionOptions", "ChainCursor"] 
-    else 
+      pure ["TransactionOptions", "ChainCursor"]
+    else
       pure ["TransactionOptions"]
   let
+    var = if isWhereClause then "y" else "x"
     constraints = ["IsAsyncProvider p"]
     quantifiedVars = ["e", "p"]
     stockVars = if f.constant
-                  then ["x0", "cm"]
-                  else ["x0"]
+                  then [var <> "0", "cm"]
+                  else [var <> "0"]
     offset = length stockVars
-    conVars = mapWithIndex (\i _ -> "x" <> show (offset + i)) f.inputs
+    inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
+    conVars = mapWithIndex (\i _ -> var <> show (offset + i)) inputs'
   helperTransport <- toTransportPrefix f.constant $ length f.outputs
-  helperPayload <- toPayload decl.typeName conVars
-  inputs <- for f.inputs toPSType
+  helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
+  ins <- for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
   pure $
-    HelperFunction
-      { signature : sigPrefix <> inputs <> [returnType]
-      , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, stockArgsR : stockVars, payloadArgs : conVars}
-      , payload : helperPayload
-      , transport : helperTransport
-      , constraints: constraints
-      , payable: f.payable
-      , quantifiedVars: quantifiedVars
-      }
+    CurriedHelperFunction { signature : sigPrefix <> ins <> [returnType]
+                          , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, payloadArgs : conVars}
+                          , payload : helperPayload
+                          , transport : helperTransport
+                          , constraints: constraints
+                          , quantifiedVars: quantifiedVars
+                          }
+
+funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
+funToHelperFunction' fun@(SolidityFunction f) opts = do
+    (FunTypeDecl decl) <- funToTypeDecl fun opts
+    import' "Network.Ethereum.Web3.Provider" [IClass "IsAsyncProvider"]
+    import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
+    sigPrefix <- if f.constant
+      then do
+        import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
+        pure ["TransactionOptions", "ChainCursor"]
+      else
+        pure ["TransactionOptions"]
+    let
+      constraints = ["IsAsyncProvider p"]
+      quantifiedVars = ["e", "p"]
+      stockVars = if f.constant
+                    then ["x0", "cm"]
+                    else ["x0"]
+    returnType <- toReturnType f.constant f.outputs
+    recIn <- recordInput f.inputs
+    whereC <- whereHelper decl sigPrefix f.inputs returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
+    pure $
+      UnCurriedHelperFunction { signature : sigPrefix <> [recIn, returnType]
+                              , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars <> ["r"], stockArgsR : stockVars}
+                              , constraints: constraints
+                              , quantifiedVars: quantifiedVars
+                              , whereClause: whereC
+                              }
+  where
+    tagInput (FunctionInput fi) = do
+      ty <- toPSType fi.type
+      pure $ "Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty
+    recordInput fis = do
+      rowElems <- for fis $ \(FunctionInput fi) -> do
+        ty <- toPSType fi.type
+        pure $ fi.name <> " :: " <> ty
+      pure $ "{ " <> joinWith ", " rowElems <> " }"
+    whereHelper d pre is ret = do
+      hlpr <- funToHelperFunction true fun opts
+      tys <- traverse tagInput is
+      pure $ unsafePartial $ case hlpr of
+        CurriedHelperFunction helper -> CurriedHelperFunction helper { constraints = []
+                                                                     , quantifiedVars = []
+                                                                     , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
+                                                                     , signature = pre <> tys <> [ret]
+                                                                     }
 
 toTransportPrefix :: Boolean -> Int -> Imported String
 toTransportPrefix isCall outputCount = do
-  fun <- if isCall 
+  fun <- if isCall
     then do
       import' "Network.Ethereum.Web3" [IVal "call"]
       pure "call"
@@ -236,17 +287,23 @@ toTransportPrefix isCall outputCount = do
   modifier <- if isCall && outputCount == 1
     then do
       import' "Network.Ethereum.Web3.Solidity" [IVal "unTuple1"]
-      pure "unTuple1 <$> " 
+      pure "unTuple1 <$> "
     else
       pure ""
   pure $ modifier <> fun
 
-toPayload :: String -> Array String -> Imported String
-toPayload typeName args = do
+toPayload :: Boolean -> String -> Array String -> Imported String
+toPayload isWhereClause typeName args = do
   import' "Data.Functor.Tagged" [IVal "tagged"]
   let tupleType = "Tuple" <> show (length args)
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
-  pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
+  args' <- if isWhereClause
+            then do
+              import' "Data.Functor.Tagged" [IVal "untagged"]
+              pure $ map (\s -> "(untagged " <> s <> " )") args
+            else pure args
+
+  pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args' <> ") :: " <> typeName <> ")"
 
 toReturnType :: Boolean -> Array SolidityType -> Imported String
 toReturnType constant outputs' = do
@@ -267,12 +324,23 @@ toReturnType constant outputs' = do
       pure $ "Web3 p e " <> out
 
 instance codeHelperFunction :: Code HelperFunction where
-  genCode (HelperFunction h) _ =
+  genCode (CurriedHelperFunction h) opts =
     let constraints = fold $ map (\c -> c <> " => ") h.constraints
-        decl = h.unpackExpr.name <> " :: " <> "forall " <> joinWith " " h.quantifiedVars <> " . " <> constraints <> joinWith " -> " h.signature
+        quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
+        decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
         defL = h.unpackExpr.name <> " " <> joinWith " " (h.unpackExpr.stockArgs <> h.unpackExpr.payloadArgs)
-        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgsR <> " " <> h.payload
-    in pure $ decl <> "\n" <> defL <> " = " <> defR
+        defR = h.transport <> " " <> joinWith " " h.unpackExpr.stockArgs <> " " <> h.payload
+    in pure <<< fold $ map (\s -> indentation <> s) [decl <> "\n", defL <> " = " <> defR]
+    where
+      indentation = fold $ replicate opts.indentationLevel " "
+  genCode (UnCurriedHelperFunction h) _ = do
+    import' "Network.Ethereum.Web3.Contract.Internal" [IVal "uncurryFields"]
+    let constraints = fold $ map (\c -> c <> " => ") h.constraints
+        quantification = if h.quantifiedVars == [] then "" else "forall " <> joinWith " " h.quantifiedVars <> ". "
+        decl = h.unpackExpr.name <> " :: " <> quantification <> constraints <> joinWith " -> " h.signature
+        defL = h.unpackExpr.name <> " " <> joinWith " " h.unpackExpr.stockArgs
+        defR = "uncurryFields " <> " r $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgsR
+    pure <<< fold $ [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", h.whereClause]
 
 --------------------------------------------------------------------------------
 
@@ -452,10 +520,14 @@ data CodeBlock =
   | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> Imported CodeBlock
-funToFunctionCodeBlock f opts = do
-  typeDecl <- funToTypeDecl f opts
-  helperFunction <- funToHelperFunction f opts
-  pure $ FunctionCodeBlock typeDecl helperFunction
+funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
+    typeDecl <- funToTypeDecl fun opts
+    helperFunction <- if isUnCurried f
+                        then funToHelperFunction' fun opts
+                        else funToHelperFunction false fun opts
+    pure $ FunctionCodeBlock typeDecl helperFunction
+  where
+    isUnCurried f' = all (\(FunctionInput fi) -> fi.name /= "") f'.inputs && not (null f'.inputs)
 
 newLine1 :: Array String -> String
 newLine1 = joinWith "\n"
@@ -469,7 +541,7 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
     declCode <- genCode decl opts
     helperCode <- genCode helper opts
     pure $
-      newLine2 
+      newLine2
         [ header
         , declCode
         , helperCode
@@ -480,9 +552,9 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
     filterInstCode <- genCode filterInst opts
     eventInstCode <- genCode eventInst opts
     genericInstCode <- genCode genericInst opts
-    pure $ 
-      newLine2 
-        [ header 
+    pure $
+      newLine2
+        [ header
         , declCode
         , filterInstCode
         , eventInstCode
@@ -513,52 +585,52 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
-type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean, prefix :: String}
+type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean, prefix :: String, indentationLevel :: Int}
 
 data IsCtrInImports = CtrIsInImports | CtrIsNotInImports
 type ModuleImportsAcc = { types :: Map ModuleName IsCtrInImports, imports :: Array String }
 
 runImports :: Imports -> String
 runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n\n" <> _)
-  where 
-  runImport :: Tuple ModuleName ModuleImports -> String
-  runImport (Tuple mName mImports) = "import " <> mName <> " (" <> joinWith ", " (runModuleImports mImports) <> ")"
-  runModuleImports :: ModuleImports -> Array String
-  runModuleImports =
-    runAcc <<< foldl f { types: mempty, imports: mempty }
-    where
-    runAcc :: ModuleImportsAcc -> Array String
-    runAcc acc = sort $ nub $ append acc.imports $ (toAscUnfoldable acc.types) >>= resolveCtrImports 
-    resolveCtrImports :: Tuple String IsCtrInImports -> Array String
-    resolveCtrImports (Tuple typeName isCtrInImports) = case isCtrInImports of
-      CtrIsInImports -> []
-      CtrIsNotInImports -> [typeName]
-    f :: ModuleImportsAcc -> ModuleImport -> ModuleImportsAcc
-    f acc = case _ of
-      IType a ->
-        if member a acc.types 
-          then acc
-          else acc{ types = insert a CtrIsNotInImports acc.types}
-      ITypeCtr a ->
-        case lookup a acc.types of
-          Nothing ->
-            { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-          Just CtrIsInImports ->
-            acc
-          Just CtrIsNotInImports ->
-            { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-      ITypeOp a ->
-        acc {imports = acc.imports <> [ "type (" <> a <> ")" ]}
-      IClass a ->
-        acc {imports = acc.imports <> [ "class " <> a ]}
-      IVal a ->
-        acc {imports = acc.imports <> [ a ]}
-      IOp a ->
-        acc {imports = acc.imports <> [ "(" <> a <> ")" ]}
+  where
+    runImport :: Tuple ModuleName ModuleImports -> String
+    runImport (Tuple mName mImports) = "import " <> mName <> " (" <> joinWith ", " (runModuleImports mImports) <> ")"
+    runModuleImports :: ModuleImports -> Array String
+    runModuleImports =
+      runAcc <<< foldl f { types: mempty, imports: mempty }
+      where
+      runAcc :: ModuleImportsAcc -> Array String
+      runAcc acc = sort $ nub $ append acc.imports $ (toAscUnfoldable acc.types) >>= resolveCtrImports
+      resolveCtrImports :: Tuple String IsCtrInImports -> Array String
+      resolveCtrImports (Tuple typeName isCtrInImports) = case isCtrInImports of
+        CtrIsInImports -> []
+        CtrIsNotInImports -> [typeName]
+      f :: ModuleImportsAcc -> ModuleImport -> ModuleImportsAcc
+      f acc = case _ of
+        IType a ->
+          if member a acc.types
+            then acc
+            else acc{ types = insert a CtrIsNotInImports acc.types}
+        ITypeCtr a ->
+          case lookup a acc.types of
+            Nothing ->
+              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
+            Just CtrIsInImports ->
+              acc
+            Just CtrIsNotInImports ->
+              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
+        ITypeOp a ->
+          acc {imports = acc.imports <> [ "type (" <> a <> ")" ]}
+        IClass a ->
+          acc {imports = acc.imports <> [ "class " <> a ]}
+        IVal a ->
+          acc {imports = acc.imports <> [ a ]}
+        IOp a ->
+          acc {imports = acc.imports <> [ "(" <> a <> ")" ]}
 
-  -- NOTE this also sorts modules as we use toAscUnfoldable
-  mergeImports :: Imports -> Imports
-  mergeImports = fromFoldableWith append >>> toAscUnfoldable
+    -- NOTE this also sorts modules as we use toAscUnfoldable
+    mergeImports :: Imports -> Imports
+    mergeImports = fromFoldableWith append >>> toAscUnfoldable
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
@@ -596,9 +668,9 @@ parseAbi {truffle} abiJson = case truffle of
           in note "truffle artifact missing abi field" mabi >>= decodeJson
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
-genPSModuleStatement opts fp = comment <> "\n" 
-  <> "module Contracts." 
-  <> basenameWithoutExt fp ".purs" 
+genPSModuleStatement opts fp = comment <> "\n"
+  <> "module Contracts."
+  <> basenameWithoutExt fp ".purs"
   <> " where\n"
     where
   comment = mkComment [basenameWithoutExt fp ".purs"]
