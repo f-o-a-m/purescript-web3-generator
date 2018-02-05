@@ -23,4 +23,4 @@ generatorMain =
                        <*> yarg "prefix" [] Nothing (Left "") false
                        <*> flag "truffle" [] (Just "Are the abi files truffle artifacts")
   where
-    go abiDir destDir p tr = void <<< launchAff $ generatePS {jsonDir : abiDir, pursDir : destDir, truffle: tr, prefix: p}
+    go abiDir destDir p tr = void <<< launchAff $ generatePS {jsonDir : abiDir, pursDir : destDir, truffle: tr, prefix: p, indentationLevel: 0}
