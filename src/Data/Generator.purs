@@ -17,13 +17,16 @@ import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (filter, length, mapWithIndex, nub, null, replicate, sort, uncons, unsafeIndex, zip, zipWith, (:))
 import Data.Either (Either, either)
-import Data.Foldable (all, fold, foldl)
+import Data.Foldable (all, fold, foldl, for_)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard, mempty)
-import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
+import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, split, take, toCharArray, toLower, toUpper)
+import Data.String.Regex (Regex, test) as Rgx
+import Data.String.Regex.Flags (noFlags) as Rgx
+import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types.Sha3 (sha3)
@@ -155,7 +158,7 @@ funToTypeDecl fun@(SolidityFunction f) opts = do
     toPSType $ fi.type
   pure $
     FunTypeDecl
-      { typeName : capitalize $ opts.prefix <> f.name <> "Fn"
+      { typeName : capitalize $ opts.exprPrefix <> f.name <> "Fn"
       , factorTypes
       , signature: toSignature fun
       }
@@ -221,13 +224,18 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   returnType <- toReturnType f.constant f.outputs
   ins <- for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
   pure $
-    CurriedHelperFunction { signature : sigPrefix <> ins <> [returnType]
-                          , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars, payloadArgs : conVars}
-                          , payload : helperPayload
-                          , transport : helperTransport
-                          , constraints: constraints
-                          , quantifiedVars: quantifiedVars
-                          }
+    CurriedHelperFunction
+      { signature: sigPrefix <> ins <> [returnType]
+      , unpackExpr:
+          { name: lowerCase $ opts.exprPrefix <> f.name
+          , stockArgs: stockVars
+          , payloadArgs: conVars
+          }
+      , payload: helperPayload
+      , transport: helperTransport
+      , constraints: constraints
+      , quantifiedVars: quantifiedVars
+      }
 
 funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
@@ -250,12 +258,17 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
     recIn <- recordInput f.inputs
     whereC <- whereHelper decl sigPrefix f.inputs returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
     pure $
-      UnCurriedHelperFunction { signature : sigPrefix <> [recIn, returnType]
-                              , unpackExpr : {name : lowerCase $ opts.prefix <> f.name, stockArgs : stockVars <> ["r"], stockArgsR : stockVars}
-                              , constraints: constraints
-                              , quantifiedVars: quantifiedVars
-                              , whereClause: whereC
-                              }
+      UnCurriedHelperFunction
+        { signature: sigPrefix <> [recIn, returnType]
+        , unpackExpr: 
+            { name: lowerCase $ opts.exprPrefix <> f.name
+            , stockArgs: stockVars <> ["r"]
+            , stockArgsR : stockVars
+            }
+        , constraints: constraints
+        , quantifiedVars: quantifiedVars
+        , whereClause: whereC
+        }
   where
     tagInput (FunctionInput fi) = do
       ty <- toPSType fi.type
@@ -589,7 +602,14 @@ instance codeAbi :: Code Abi where
 -- | Tools to read and write the files
 --------------------------------------------------------------------------------
 
-type GeneratorOptions = {jsonDir :: FilePath, pursDir :: FilePath, truffle :: Boolean, prefix :: String, indentationLevel :: Int}
+type GeneratorOptions =
+  { jsonDir :: FilePath
+  , pursDir :: FilePath
+  , truffle :: Boolean
+  , exprPrefix :: String
+  , modulePrefix :: String
+  , indentationLevel :: Int
+  }
 
 data IsCtrInImports = CtrIsInImports | CtrIsNotInImports
 type ModuleImportsAcc = { types :: Map ModuleName IsCtrInImports, imports :: Array String }
@@ -638,23 +658,47 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
 
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
-    let opts = os { pursDir = os.pursDir <> "/Contracts" }
+    let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
     fs <- readdir opts.jsonDir
-    isAlreadyThere <- exists opts.pursDir
-    _ <- if isAlreadyThere then pure unit else mkdir opts.pursDir
+    mkdirP opts.pursDir
     case fs of
       [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-      fs' -> void $ for (filter (\f -> extname f == ".json") fs') $ \f -> do
-        let f' = genPSFileName opts f
-        writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
-        let successCheck = withGraphics (foreground Green) $ "✔"
-            successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
-        liftEff <<< log $ successMsg
+      fs' -> for_ (filter (\f -> extname f == ".json") fs') $ \f -> do
+        if Rgx.test fileNameRegex (basenameWithoutExt f ".json")
+          then do
+            let f' = genPSFileName opts f
+            writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
+            let successCheck = withGraphics (foreground Green) $ "✔"
+                successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
+            liftEff <<< log $ successMsg
+          else
+            throwError <<< error $ "Got abi json file wich has invalid name: `" <> f <> "`"
   where
     genPSFileName :: GeneratorOptions -> FilePath -> FilePath
     genPSFileName opts fp =
         opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 
+mkdirP :: forall r. FilePath -> Aff (fs :: FS, console :: CONSOLE | r) Unit
+mkdirP dir =
+  void $ foldl mkdirAppend (pure "") (split (Pattern "/") dir)
+  where
+  mkdirAppend prev current = do
+    p <- prev
+    let
+      next = if p == ""
+        then current
+        else p <> "/" <> current
+    folderExists <- exists next
+    unless folderExists do
+      liftEff $ log $ "Folder: `" <> next <> "` doesn't exists, creating."
+      mkdir next
+    pure next
+
+
+fileNameRegex :: Rgx.Regex
+fileNameRegex =
+  Rgx.unsafeRegex "^[A-Z][A-Za-z\\d]*$" Rgx.noFlags
+  
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi opts abiFile destFile = do
@@ -673,7 +717,7 @@ parseAbi {truffle} abiJson = case truffle of
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = comment <> "\n"
-  <> "module Contracts."
+  <> "module " <> opts.modulePrefix <> "."
   <> basenameWithoutExt fp ".purs"
   <> " where\n"
     where

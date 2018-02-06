@@ -6,4 +6,4 @@
 /.psc*
 /.purs*
 /.psa*
-src/Contracts/*
+/contracts/
