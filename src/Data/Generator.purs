@@ -259,6 +259,8 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
   where
     tagInput (FunctionInput fi) = do
       ty <- toPSType fi.type
+      import' "Data.Functor.Tagged" [IType "Tagged"]
+      import' "Data.Symbol" [IType "SProxy"]
       pure $ "Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty
     recordInput fis = do
       rowElems <- for fis $ \(FunctionInput fi) -> do
@@ -439,15 +441,20 @@ instance codeEventDecodeInstance :: Code EventDecodeInstance where
 eventToDecodeEventInstance :: SolidityEvent -> Imported EventDecodeInstance
 eventToDecodeEventInstance event@(SolidityEvent ev) = do
   (EventDataDecl decl) <- eventToDataDecl event
+  indexedTypesTagged <- for decl.indexedTypes taggedFactor
+  nonIndexedTypesTagged <- for decl.nonIndexedTypes taggedFactor
   let 
     indexedTupleType = "Tuple" <> show (length decl.indexedTypes)
     nonIndexedTupleType = "Tuple" <> show (length decl.nonIndexedTypes)
-    indexedTuple = "(" <> indexedTupleType <> " " <> joinWith " " (map taggedFactor decl.indexedTypes) <> ")"
-    nonIndexedTuple = "(" <> nonIndexedTupleType <> " " <> joinWith " " (map taggedFactor decl.nonIndexedTypes) <> ")"
+    indexedTuple = "(" <> indexedTupleType <> " " <> joinWith " " indexedTypesTagged <> ")"
+    nonIndexedTuple = "(" <> nonIndexedTupleType <> " " <> joinWith " " nonIndexedTypesTagged <> ")"
   import' "Network.Ethereum.Web3.Solidity" [IType indexedTupleType, IType nonIndexedTupleType]
   pure $ EventDecodeInstance {indexedTuple, nonIndexedTuple, combinedType: decl.constructor, anonymous: ev.anonymous}
   where
-  taggedFactor (Tuple label value) = "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
+  taggedFactor (Tuple label value) = do 
+    import' "Data.Functor.Tagged" [IType "Tagged"]
+    import' "Data.Symbol" [IType "SProxy"]
+    pure $ "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
 
 
 data EventFilterInstance =
