@@ -12,10 +12,12 @@ import Data.EitherR (fmapL)
 import Data.Foldable (foldMap)
 import Data.Generic (class Generic, gShow)
 import Data.Int (fromString)
+import Data.List.Types (NonEmptyList(..))
 import Data.Maybe (Maybe(..), maybe)
+import Data.NonEmpty ((:|))
 import Data.String (fromCharArray)
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
-import Text.Parsing.StringParser.Combinators (lookAhead, choice, many1Till, optionMaybe, many1)
+import Text.Parsing.StringParser.Combinators (lookAhead, choice, manyTill, optionMaybe, many1)
 import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
 
 --------------------------------------------------------------------------------
@@ -35,7 +37,7 @@ data SolidityType =
   | SolidityString
   | SolidityBytesN Int
   | SolidityBytesD
-  | SolidityVector (Array Int) SolidityType
+  | SolidityVector (NonEmptyList Int) SolidityType
   | SolidityArray SolidityType
 
 derive instance genericSolidityType :: Generic SolidityType
@@ -104,8 +106,9 @@ solidityBasicTypeParser =
 parseVector :: Parser SolidityType
 parseVector = do
     s <- solidityBasicTypeParser
-    ns <- many1Till lengthParser ((lookAhead $ void (string "[]")) <|> eof)
-    pure $ SolidityVector (fromFoldable $ ns) s
+    n <- lengthParser
+    ns <- manyTill lengthParser ((lookAhead $ void (string "[]")) <|> eof)
+    pure $ SolidityVector (NonEmptyList $ n :| ns) s
   where
     lengthParser = do
           _ <- char '['

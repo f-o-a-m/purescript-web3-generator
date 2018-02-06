@@ -15,14 +15,17 @@ import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityV
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, nub, null, replicate, sort, uncons, unsafeIndex, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, nub, null, replicate, sort, uncons, zip, zipWith, (:))
 import Data.Either (Either, either)
 import Data.Foldable (all, fold, foldl, for_)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
+import Data.List.Types (NonEmptyList(..)) as List
+import Data.List (uncons) as List
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard, mempty)
+import Data.NonEmpty ((:|))
 import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, split, take, toCharArray, toLower, toUpper)
 import Data.String.Regex (Regex, test) as Rgx
 import Data.String.Regex.Flags (noFlags) as Rgx
@@ -34,7 +37,6 @@ import Network.Ethereum.Web3.Types.Types (HexString, unHex)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
-import Partial.Unsafe (unsafePartial)
 
 --------------------------------------------------------------------------------
 type ModuleName = String
@@ -129,16 +131,15 @@ toPSType s = case s of
       t <- toPSType a
       pure $ "(" <> "Array " <> t <> ")"
   where
-  expandVector ns' a' = unsafePartial $ case uncons ns' of
-    Just {head, tail} -> do
-      l <- vectorLength head
+  expandVector (List.NonEmptyList (n :| ns)) a' = do
+      l <- vectorLength n
       import' "Network.Ethereum.Web3" [IType "Vector"]
-      if length tail == 0
-        then do
+      case List.uncons ns of
+        Nothing -> do
           x <- toPSType a'
           pure $ "(" <> "Vector " <> l <> " " <> x <> ")"
-        else do
-          x <- expandVector tail a'
+        Just {head, tail} -> do
+          x <- expandVector (List.NonEmptyList $ head :| tail) a'
           pure $ "(" <> "Vector " <> l <> " " <> x <> ")"
 
 --------------------------------------------------------------------------------
@@ -158,7 +159,7 @@ funToTypeDecl fun@(SolidityFunction f) opts = do
     toPSType $ fi.type
   pure $
     FunTypeDecl
-      { typeName : capitalize $ opts.exprPrefix <> f.name <> "Fn"
+      { typeName: capitalize $ opts.exprPrefix <> f.name <> "Fn"
       , factorTypes
       , signature: toSignature fun
       }
@@ -182,23 +183,26 @@ instance codeDataDecl :: Code FunTypeDecl where
 --------------------------------------------------------------------------------
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
+type CurriedHelperFunctionR = 
+  { signature :: Array String
+  , unpackExpr :: { name :: String, stockArgs :: Array String, payloadArgs :: Array String }
+  , payload :: String
+  , transport :: String
+  , constraints :: Array String
+  , quantifiedVars :: Array String
+  }
 
-data HelperFunction =
-    CurriedHelperFunction { signature :: Array String
-                          , unpackExpr :: {name :: String, stockArgs :: Array String, payloadArgs :: Array String}
-                          , payload :: String
-                          , transport :: String
-                          , constraints :: Array String
-                          , quantifiedVars :: Array String
-                          }
-  | UnCurriedHelperFunction { signature :: Array String
-                            , unpackExpr :: {name :: String, stockArgs :: Array String, stockArgsR :: Array String}
-                            , constraints :: Array String
-                            , quantifiedVars :: Array String
-                            , whereClause :: String
-                            }
+data HelperFunction
+  = CurriedHelperFunction CurriedHelperFunctionR
+  | UnCurriedHelperFunction
+      { signature :: Array String
+      , unpackExpr :: { name :: String, stockArgs :: Array String, stockArgsR :: Array String }
+      , constraints :: Array String
+      , quantifiedVars :: Array String
+      , whereClause :: String
+      }
 
-funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Imported HelperFunction
+funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   (FunTypeDecl decl) <- funToTypeDecl fun opts
   import' "Network.Ethereum.Web3.Provider" [IClass "IsAsyncProvider"]
@@ -223,19 +227,18 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
   ins <- for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
-  pure $
-    CurriedHelperFunction
-      { signature: sigPrefix <> ins <> [returnType]
-      , unpackExpr:
-          { name: lowerCase $ opts.exprPrefix <> f.name
-          , stockArgs: stockVars
-          , payloadArgs: conVars
-          }
-      , payload: helperPayload
-      , transport: helperTransport
-      , constraints: constraints
-      , quantifiedVars: quantifiedVars
-      }
+  pure
+    { signature: sigPrefix <> ins <> [returnType]
+    , unpackExpr:
+        { name: lowerCase $ opts.exprPrefix <> f.name
+        , stockArgs: stockVars
+        , payloadArgs: conVars
+        }
+    , payload: helperPayload
+    , transport: helperTransport
+    , constraints: constraints
+    , quantifiedVars: quantifiedVars
+    }
 
 funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
@@ -263,7 +266,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         , unpackExpr: 
             { name: lowerCase $ opts.exprPrefix <> f.name
             , stockArgs: stockVars <> ["r"]
-            , stockArgsR : stockVars
+            , stockArgsR: stockVars
             }
         , constraints: constraints
         , quantifiedVars: quantifiedVars
@@ -281,14 +284,14 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         pure $ fi.name <> " :: " <> ty
       pure $ "{ " <> joinWith ", " rowElems <> " }"
     whereHelper d pre is ret = do
-      hlpr <- funToHelperFunction true fun opts
+      helper <- funToHelperFunction true fun opts
       tys <- traverse tagInput is
-      pure $ unsafePartial $ case hlpr of
-        CurriedHelperFunction helper -> CurriedHelperFunction helper { constraints = []
-                                                                     , quantifiedVars = []
-                                                                     , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
-                                                                     , signature = pre <> tys <> [ret]
-                                                                     }
+      pure $ CurriedHelperFunction helper
+        { constraints = []
+        , quantifiedVars = []
+        , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
+        , signature = pre <> tys <> [ret]
+        }
 
 toTransportPrefix :: Boolean -> Int -> Imported String
 toTransportPrefix isCall outputCount = do
@@ -333,10 +336,10 @@ toReturnType constant outputs' = do
       import' "Network.Ethereum.Web3.Types" [IType "CallError"]
       import' "Data.Either" [IType "Either"]
       outputs <- for outputs' toPSType
-      out <- case length outputs of
-        0 -> pure "Unit"
-        1 -> pure $ unsafePartial $ unsafeIndex outputs 0
-        _ -> do
+      out <- case uncons outputs of
+        Nothing -> pure "Unit"
+        Just { head, tail: []} -> pure head
+        Just _ -> do
           let tupleType = "Tuple" <> show (length outputs)
           import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
           pure $ "(" <> tupleType <> " " <> joinWith " " outputs <> ")"
@@ -383,7 +386,7 @@ eventToDataDecl (SolidityEvent ev) = do
   recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
     t <- toPSType sv.type
     pure $ Tuple sv.name t
-  pure $  EventDataDecl
+  pure $ EventDataDecl
     { constructor: ev.name
     , indexedTypes
     , nonIndexedTypes
@@ -548,7 +551,7 @@ funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
     typeDecl <- funToTypeDecl fun opts
     helperFunction <- if isUnCurried f
                         then funToHelperFunction' fun opts
-                        else funToHelperFunction false fun opts
+                        else funToHelperFunction false fun opts <#> CurriedHelperFunction
     pure $ FunctionCodeBlock typeDecl helperFunction
   where
     isUnCurried f' = all (\(FunctionInput fi) -> fi.name /= "") f'.inputs && not (null f'.inputs)
