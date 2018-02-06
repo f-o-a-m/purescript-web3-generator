@@ -17,7 +17,7 @@
   "devDependencies": {},
   "scripts": {
     "postinstall": "./node_modules/.bin/psc-package update",
-    "build": "pulp --psc-package build",
+    "build": "pulp --psc-package build -I contracts",
     "test": "pulp --psc-package test && npm run build"
   },
   "repository": {
