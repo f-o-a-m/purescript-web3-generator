@@ -1,8 +1,8 @@
 {
   "private": true,
   "scripts": {
-    "build": "pulp build -I contracts",
-    "test": "pulp test && npm run build"
+    "build": "pulp build",
+    "test": "pulp test && pulp build -I contracts"
   },
   "dependencies": {
     "bignumber.js": "^4.0.2",
