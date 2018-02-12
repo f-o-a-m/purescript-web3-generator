@@ -1,6 +1,6 @@
 {
     "name": "purescript-web3-generator",
-    "set": "master",
+    "set": "web3-v0.15.0-beta",
     "source": "https://github.com/f-o-a-m/package-sets.git",
     "depends": [
         "string-parsers",
