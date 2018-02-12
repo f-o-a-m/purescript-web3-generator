@@ -209,10 +209,15 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
   sigPrefix <- if f.constant
     then do
-      import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
-      pure ["TransactionOptions", "ChainCursor"]
-    else
-      pure ["TransactionOptions"]
+      import' "Network.Ethereum.Web3.Types" [IType "ChainCursor", IType "NoPay"]
+      pure ["TransactionOptions NoPay", "ChainCursor"]
+    else if f.payable
+           then do
+               import' "Network.Ethereum.Web3.Types" [IType "Wei"]
+               pure ["TransactionOptions Wei"]
+           else do
+               import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+               pure ["TransactionOptions NoPay"]
   let
     var = if isWhereClause then "y" else "x"
     constraints = ["IsAsyncProvider p"]
@@ -247,10 +252,15 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
     import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
     sigPrefix <- if f.constant
       then do
-        import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
-        pure ["TransactionOptions", "ChainCursor"]
-      else
-        pure ["TransactionOptions"]
+        import' "Network.Ethereum.Web3.Types" [IType "ChainCursor", IType "NoPay"]
+        pure ["TransactionOptions NoPay", "ChainCursor"]
+      else if f.payable
+           then do
+             import' "Network.Ethereum.Web3.Types" [IType "Wei"]
+             pure ["TransactionOptions Wei"]
+           else do
+             import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+             pure ["TransactionOptions NoPay"]
     let
       constraints = ["IsAsyncProvider p"]
       quantifiedVars = ["e", "p"]
@@ -263,7 +273,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
     pure $
       UnCurriedHelperFunction
         { signature: sigPrefix <> [recIn, returnType]
-        , unpackExpr: 
+        , unpackExpr:
             { name: lowerCase $ opts.exprPrefix <> f.name
             , stockArgs: stockVars <> ["r"]
             , stockArgsR: stockVars
