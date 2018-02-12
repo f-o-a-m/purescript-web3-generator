@@ -1,11 +1,9 @@
 {
-  "name": "purescript-web3-generator",
-  "version": "0.9.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "test": "test",
-    "lib": "./src"
+  "private": true,
+  "scripts": {
+    "postinstall": "bower install",
+    "build": "pulp build -I contracts",
+    "test": "pulp test && npm run build"
   },
   "dependencies": {
     "bignumber.js": "^4.0.2",
@@ -13,21 +11,5 @@
     "psc-package": "^0.2.4-rc1",
     "pulp": "^12.0.0",
     "yargs": "^8.0.2"
-  },
-  "devDependencies": {},
-  "scripts": {
-    "postinstall": "bower install",
-    "build": "pulp build -I contracts",
-    "test": "pulp test && npm run build"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/f-o-a-m/purescript-web3-generator.git"
-  },
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/f-o-a-m/purescript-web3-generator/issues"
-  },
-  "homepage": "https://github.com/f-o-a-m/purescript-web3-generator#readme"
+  }
 }
