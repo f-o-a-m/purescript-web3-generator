@@ -223,7 +223,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
     constraints = ["IsAsyncProvider p"]
     quantifiedVars = ["e", "p"]
     stockVars = if f.constant
-                  then [var <> "0", "cm"]
+                  then [var <> "0", if isWhereClause then "cm'" else "cm"]
                   else [var <> "0"]
     offset = length stockVars
     inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
