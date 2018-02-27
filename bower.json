@@ -28,7 +28,7 @@
     "purescript-node-fs-aff": "^5.0.0",
     "purescript-console": "^3.0.0",
     "purescript-string-parsers": "^3.0.1",
-    "purescript-web3": "https://github.com/f-o-a-m/purescript-web3.git#reader"
+    "purescript-web3": "^0.16.0"
   },
   "devDependencies": {
     "purescript-spec": "^2.0.0",

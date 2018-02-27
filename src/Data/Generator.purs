@@ -32,8 +32,7 @@ import Data.String.Regex.Flags (noFlags) as Rgx
 import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Network.Ethereum.Web3.Types.HexString (HexString, unHex)
-import Network.Ethereum.Web3.Types.Sha3 (sha3)
+import Network.Ethereum.Web3.Types (HexString, unHex, sha3)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
 import Node.Path (FilePath, basenameWithoutExt, extname)
@@ -106,7 +105,7 @@ toPSType s = case s of
     SolidityBool -> do
       pure "Boolean"
     SolidityAddress -> do
-      import' "Network.Ethereum.Web3.Types.Types" [IType "Address"]
+      import' "Network.Ethereum.Web3.Types" [IType "Address"]
       pure "Address"
     SolidityUint n -> do
       import' "Network.Ethereum.Web3.Solidity" [IType "UIntN"]
@@ -205,18 +204,18 @@ data HelperFunction
 funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   (FunTypeDecl decl) <- funToTypeDecl fun opts
-  import' "Network.Ethereum.Web3.Types.Types" [IType "TransactionOptions"]
+  import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
   sigPrefix <- if f.constant
     then do
-      import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "NoPay"]
-      import' "Network.Ethereum.Web3.Types.Types" [IType "ChainCursor"]
+      import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+      import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
       pure ["TransactionOptions NoPay", "ChainCursor"]
     else if f.payable
            then do
-               import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "Wei"]
+               import' "Network.Ethereum.Web3.Types" [IType "Wei"]
                pure ["TransactionOptions Wei"]
            else do
-               import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "NoPay"]
+               import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
                pure ["TransactionOptions NoPay"]
   let
     var = if isWhereClause then "y" else "x"
@@ -248,18 +247,18 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
 funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
     (FunTypeDecl decl) <- funToTypeDecl fun opts
-    import' "Network.Ethereum.Web3.Types.Types" [IType "TransactionOptions"]
+    import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
     sigPrefix <- if f.constant
       then do
-        import' "Network.Ethereum.Web3.Types.Types" [IType "ChainCursor"]
-        import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "NoPay"]
+        import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
+        import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
         pure ["TransactionOptions NoPay", "ChainCursor"]
       else if f.payable
            then do
-             import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "Wei"]
+             import' "Network.Ethereum.Web3.Types" [IType "Wei"]
              pure ["TransactionOptions Wei"]
            else do
-             import' "Network.Ethereum.Web3.Types.EtherUnit" [IType "NoPay"]
+             import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
              pure ["TransactionOptions NoPay"]
     let
       constraints = []
@@ -337,13 +336,13 @@ toPayload isWhereClause typeName args = do
 
 toReturnType :: Boolean -> Array SolidityType -> Imported String
 toReturnType constant outputs' = do
-  import' "Network.Ethereum.Web3.Types.Web3" [IType "Web3"]
+  import' "Network.Ethereum.Web3.Types" [IType "Web3"]
   if not constant
     then do
-      import' "Network.Ethereum.Web3.Types.HexString" [IType "HexString"]
+      import' "Network.Ethereum.Web3.Types" [IType "HexString"]
       pure "Web3 e HexString"
     else do
-      import' "Network.Ethereum.Web3.Types.Errors" [IType "CallError"]
+      import' "Network.Ethereum.Web3.Types" [IType "CallError"]
       import' "Data.Either" [IType "Either"]
       outputs <- for outputs' toPSType
       out <- case uncons outputs of
@@ -515,11 +514,11 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
   where
   mkFilterExpr :: String -> Imported String
   mkFilterExpr addr = do
-    import' "Network.Ethereum.Web3.Types.HexString" [IVal "mkHexString"]
+    import' "Network.Ethereum.Web3.Types" [IVal "mkHexString"]
     import' "Data.Maybe" [ITypeCtr "Maybe", IVal "fromJust"]
     import' "Data.Lens" [IOp ".~"]
     import' "Network.Ethereum.Web3" [IVal "_address", IVal "_topics"]
-    import' "Network.Ethereum.Web3.Types.Types" [IVal "defaultFilter"]
+    import' "Network.Ethereum.Web3.Types" [IVal "defaultFilter"]
     import' "Partial.Unsafe" [IVal "unsafePartial"]
     let 
       nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
