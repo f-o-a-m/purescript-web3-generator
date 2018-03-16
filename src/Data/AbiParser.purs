@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Alternative ((<|>))
 import Data.Argonaut.Core (fromObject)
-import Data.Argonaut.Decode ((.?))
+import Data.Argonaut.Decode ((.?),(.??))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Array (fromFoldable)
 import Data.Either (Either(..))
@@ -13,7 +13,7 @@ import Data.Foldable (foldMap)
 import Data.Generic (class Generic, gShow)
 import Data.Int (fromString)
 import Data.List.Types (NonEmptyList(..))
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), maybe, fromMaybe)
 import Data.NonEmpty ((:|))
 import Data.String (fromCharArray)
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
@@ -182,37 +182,17 @@ instance showSolidityFunction :: Show SolidityFunction where
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
     obj <- decodeJson json
-    nm <- obj .? "name"
+    mName <- obj .?? "name"
     is <- obj .? "inputs"
-    os <- obj .? "outputs"
-    c <- obj .? "constant"
-    p <- obj .? "payable"
-    pure $ SolidityFunction { name : nm
+    mos <- obj .?? "outputs"
+    mc <- obj .?? "constant"
+    mp <- obj .?? "payable"
+    pure $ SolidityFunction { name : fromMaybe "constructor" mName
                             , inputs : is
-                            , outputs : os
-                            , constant : c
-                            , payable: p
+                            , outputs : fromMaybe [] mos
+                            , constant : fromMaybe false mc
+                            , payable: fromMaybe false mp
                             }
-
---------------------------------------------------------------------------------
--- | Solidity Constructor Parser
---------------------------------------------------------------------------------
-
-data SolidityConstructor =
-  SolidityConstructor { inputs :: Array SolidityType
-                      }
-
-derive instance genericSolidityConstructor :: Generic SolidityConstructor
-
-instance showSolidityConstructor :: Show SolidityConstructor where
-  show = gShow
-
-instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
-  decodeJson json = do
-    obj <- decodeJson json
-    is <- obj .? "inputs"
-    pure $ SolidityConstructor { inputs : is
-                               }
 
 --------------------------------------------------------------------------------
 -- | Solidity Events Parser
@@ -283,7 +263,7 @@ instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
 
 data AbiType =
     AbiFunction SolidityFunction
-  | AbiConstructor SolidityConstructor
+  | AbiConstructor SolidityFunction
   | AbiEvent SolidityEvent
   | AbiFallback SolidityFallback
 
