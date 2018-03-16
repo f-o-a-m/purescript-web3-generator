@@ -11,7 +11,7 @@ import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Writer (Writer, runWriter, tell)
-import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
@@ -86,7 +86,7 @@ makeDigits n = do
   let consed = joinWith " :& " ddigits
   if length ddigits == 1
     then pure consed
-    else do 
+    else do
     import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":&"]
     pure $ "(" <> consed <> ")"
 
@@ -182,7 +182,8 @@ instance codeDataDecl :: Code FunTypeDecl where
 --------------------------------------------------------------------------------
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
-type CurriedHelperFunctionR = 
+
+type CurriedHelperFunctionR =
   { signature :: Array String
   , unpackExpr :: { name :: String, stockArgs :: Array String, payloadArgs :: Array String }
   , payload :: String
@@ -205,29 +206,38 @@ funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Import
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   (FunTypeDecl decl) <- funToTypeDecl fun opts
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
-  sigPrefix <- if f.constant
-    then do
-      import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
-      import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
-      pure ["TransactionOptions NoPay", "ChainCursor"]
-    else if f.payable
-           then do
-               import' "Network.Ethereum.Web3.Types" [IType "Wei"]
-               pure ["TransactionOptions Wei"]
-           else do
-               import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
-               pure ["TransactionOptions NoPay"]
+  sigPrefix <-
+    if f.isConstructor
+      then do
+        import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+        import' "Network.Ethereum.Web3.Types" [IType "HexString"]
+        pure ["TransactionOptions NoPay", "HexString"]
+      else if f.constant
+        then do
+          import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+          import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
+          pure ["TransactionOptions NoPay", "ChainCursor"]
+        else if f.payable
+               then do
+                   import' "Network.Ethereum.Web3.Types" [IType "Wei"]
+                   pure ["TransactionOptions Wei"]
+               else do
+                   import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+                   pure ["TransactionOptions NoPay"]
   let
     var = if isWhereClause then "y" else "x"
     constraints = []
     quantifiedVars = ["e"]
-    stockVars = if f.constant
-                  then [var <> "0", if isWhereClause then "cm'" else "cm"]
-                  else [var <> "0"]
+    stockVars =
+      if f.isConstructor
+         then [var <> "0", if isWhereClause then "bc'" else "bc"]
+         else if f.constant
+              then [var <> "0", if isWhereClause then "cm'" else "cm"]
+              else [var <> "0"]
     offset = length stockVars
     inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
     conVars = mapWithIndex (\i _ -> var <> show (offset + i)) inputs'
-  helperTransport <- toTransportPrefix f.constant $ length f.outputs
+  helperTransport <- toTransportPrefix f.isConstructor f.constant $ length f.outputs
   helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
   ins <- for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
@@ -248,24 +258,32 @@ funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperF
 funToHelperFunction' fun@(SolidityFunction f) opts = do
     (FunTypeDecl decl) <- funToTypeDecl fun opts
     import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
-    sigPrefix <- if f.constant
-      then do
-        import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
-        import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
-        pure ["TransactionOptions NoPay", "ChainCursor"]
-      else if f.payable
-           then do
-             import' "Network.Ethereum.Web3.Types" [IType "Wei"]
-             pure ["TransactionOptions Wei"]
-           else do
-             import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
-             pure ["TransactionOptions NoPay"]
+    sigPrefix <-
+      if f.isConstructor
+        then do
+          import' "Network.Ethereum.Web3.Types" [IType "HexString"]
+          import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+          pure ["TransactionOptions NoPay", "HexString"]
+        else if f.constant
+          then do
+            import' "Network.Ethereum.Web3.Types" [IType "ChainCursor"]
+            import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+            pure ["TransactionOptions NoPay", "ChainCursor"]
+          else if f.payable
+               then do
+                 import' "Network.Ethereum.Web3.Types" [IType "Wei"]
+                 pure ["TransactionOptions Wei"]
+               else do
+                 import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
+                 pure ["TransactionOptions NoPay"]
     let
       constraints = []
       quantifiedVars = ["e"]
-      stockVars = if f.constant
-                    then ["x0", "cm"]
-                    else ["x0"]
+      stockVars = if f.isConstructor
+                    then ["x0", "bc"]
+                    else if f.constant
+                      then ["x0", "cm"]
+                      else ["x0"]
     returnType <- toReturnType f.constant f.outputs
     recIn <- recordInput f.inputs
     whereC <- whereHelper decl sigPrefix f.inputs returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
@@ -302,15 +320,19 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         , signature = pre <> tys <> [ret]
         }
 
-toTransportPrefix :: Boolean -> Int -> Imported String
-toTransportPrefix isCall outputCount = do
-  fun <- if isCall
+toTransportPrefix :: Boolean -> Boolean -> Int -> Imported String
+toTransportPrefix isConstructor isCall outputCount = do
+  fun <- if isConstructor
     then do
-      import' "Network.Ethereum.Web3" [IVal "call"]
-      pure "call"
-    else do
-      import' "Network.Ethereum.Web3" [IVal "sendTx"]
-      pure "sendTx"
+      import' "Network.Ethereum.Web3" [IVal "deployContract"]
+      pure "deployContract"
+    else if isCall
+      then do
+        import' "Network.Ethereum.Web3" [IVal "call"]
+        pure "call"
+      else do
+        import' "Network.Ethereum.Web3" [IVal "sendTx"]
+        pure "sendTx"
   modifier <- if isCall && outputCount == 1
     then do
       import' "Network.Ethereum.Web3.Solidity" [IVal "unTuple1"]
@@ -373,6 +395,7 @@ instance codeHelperFunction :: Code HelperFunction where
         defR = "uncurryFields " <> " r $ " <> h.unpackExpr.name <> "'" <> " " <> joinWith " " h.unpackExpr.stockArgsR
     pure <<< fold $ [decl <> "\n", defL <> " = " <> defR <> "\n", "   where\n", h.whereClause]
 
+
 --------------------------------------------------------------------------------
 
 data EventDataDecl =
@@ -409,7 +432,7 @@ instance codeEventDataDecl :: Code EventDataDecl where
     let recordField (Tuple label val) = label <> " :: " <> val
         newtypeDef = "newtype " <> decl.constructor <> " = " <> decl.constructor <> " {" <> joinWith "," (map recordField decl.recordType) <> "}"
         newtypeInstanceDecl = "derive instance newtype" <> decl.constructor <> " :: Newtype " <> decl.constructor <> " _"
-    pure $ 
+    pure $
       newLine2
         [ newtypeDef
         , newtypeInstanceDecl
@@ -468,7 +491,7 @@ eventToDecodeEventInstance event@(SolidityEvent ev) = do
   (EventDataDecl decl) <- eventToDataDecl event
   indexedTypesTagged <- for decl.indexedTypes taggedFactor
   nonIndexedTypesTagged <- for decl.nonIndexedTypes taggedFactor
-  let 
+  let
     indexedTupleType = "Tuple" <> show (length decl.indexedTypes)
     nonIndexedTupleType = "Tuple" <> show (length decl.nonIndexedTypes)
     indexedTuple = "(" <> indexedTupleType <> " " <> joinWith " " indexedTypesTagged <> ")"
@@ -476,7 +499,7 @@ eventToDecodeEventInstance event@(SolidityEvent ev) = do
   import' "Network.Ethereum.Web3.Solidity" [IType indexedTupleType, IType nonIndexedTupleType]
   pure $ EventDecodeInstance {indexedTuple, nonIndexedTuple, combinedType: decl.constructor, anonymous: ev.anonymous}
   where
-  taggedFactor (Tuple label value) = do 
+  taggedFactor (Tuple label value) = do
     import' "Data.Functor.Tagged" [IType "Tagged"]
     import' "Data.Symbol" [IType "SProxy"]
     pure $ "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
@@ -520,14 +543,14 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
     import' "Network.Ethereum.Web3" [IVal "_address", IVal "_topics"]
     import' "Network.Ethereum.Web3.Types" [IVal "defaultFilter"]
     import' "Partial.Unsafe" [IVal "unsafePartial"]
-    let 
+    let
       nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
-      indexedVals = 
+      indexedVals =
         if nIndexedArgs == 0
           then ""
           else "," <> joinWith "," (replicate nIndexedArgs "Nothing")
       eventIdStr = "Just ( unsafePartial $ fromJust $ mkHexString " <> "\"" <> (unHex $ eventId ev) <> "\"" <> ")"
-    pure $ 
+    pure $
       fold
         ["defaultFilter"
         , "\n\t\t"
@@ -607,10 +630,16 @@ instance codeAbi :: Code Abi where
       AbiEvent e -> do
         eventCodeBlock <- eventToEventCodeBlock e
         genCode eventCodeBlock opts
-      AbiConstructor _ ->
-        -- Constructor is only called when the contract is deployed
-        -- now currently the library doesn't handle contract deployments very well.
-        pure ""
+      AbiConstructor (SolidityConstructor c) -> do
+        let f = SolidityFunction { name : "constructor"
+                                 , inputs : c.inputs
+                                 , outputs : []
+                                 , constant : false
+                                 , payable : false
+                                 , isConstructor : true
+                                 }
+        functionCodeBlock <- funToFunctionCodeBlock f opts
+        genCode functionCodeBlock opts
       AbiFallback _ ->
         -- Fallback is a function that gets called in case someone
         -- sends ether to the contract with no function specified
@@ -718,7 +747,7 @@ mkdirP dir =
 fileNameRegex :: Rgx.Regex
 fileNameRegex =
   Rgx.unsafeRegex "^[A-Z][A-Za-z\\d]*$" Rgx.noFlags
-  
+
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
 writeCodeFromAbi opts abiFile destFile = do

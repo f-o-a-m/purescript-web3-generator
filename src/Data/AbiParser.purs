@@ -172,6 +172,7 @@ data SolidityFunction =
                    , outputs :: Array SolidityType
                    , constant :: Boolean
                    , payable :: Boolean
+                   , isConstructor :: Boolean
                    }
 
 derive instance genericSolidityFunction :: Generic SolidityFunction
@@ -192,6 +193,7 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
                             , outputs : os
                             , constant : c
                             , payable: p
+                            , isConstructor: false
                             }
 
 --------------------------------------------------------------------------------
@@ -199,7 +201,7 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
 --------------------------------------------------------------------------------
 
 data SolidityConstructor =
-  SolidityConstructor { inputs :: Array SolidityType
+  SolidityConstructor { inputs :: Array FunctionInput
                       }
 
 derive instance genericSolidityConstructor :: Generic SolidityConstructor
