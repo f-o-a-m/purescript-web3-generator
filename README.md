@@ -43,7 +43,7 @@ main = generatorMain
 
 ```sh
 
-pulp -m Generator --src-path generator run -- --abis <abis> --dest src --module Contracts ...
+pulp run -m Generator --src-path generator -- --abis <abis> --dest src --module Contracts ...
 
 ```
 
@@ -53,7 +53,7 @@ pulp -m Generator --src-path generator run -- --abis <abis> --dest src --module 
 Until [this issue](https://github.com/purescript-contrib/pulp/issues/309) is fixed, we have to temporarily replace the step above with something like this
 
 ```sh
-pulp -m Generator --src-path generator build --to generator.js
+pulp build -m Generator --src-path generator --to generator.js
 node generator.js --abis <abis> --dest src --module Contracts ...
 rm generator.js
 ```
