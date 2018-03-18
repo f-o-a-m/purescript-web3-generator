@@ -43,9 +43,11 @@ main = generatorMain
 
 ```sh
 
-pulp -m Generator --src-path generator run -- --abis <abis> --dest src --module Contracts ...
+pulp -m Generator --src-path generator run -- --abis <abiDir> --dest src --module Contracts ...
 
 ```
+
+Note: ABI files in the `abiDir` should have a `.json` extension.
 
 (note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
 
@@ -54,7 +56,7 @@ Until [this issue](https://github.com/purescript-contrib/pulp/issues/309) is fix
 
 ```sh
 pulp -m Generator --src-path generator build --to generator.js
-node generator.js --abis <abis> --dest src --module Contracts ...
+node generator.js --abis <abiDir> --dest src --module Contracts ...
 rm generator.js
 ```
 
