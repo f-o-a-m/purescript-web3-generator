@@ -45,7 +45,10 @@ main = generatorMain
 
 pulp run -m Generator --src-path generator -- --abis <abis> --dest src --module Contracts ...
 
+
 ```
+
+Note: ABI files in the `abiDir` should have a `.json` extension.
 
 (note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
 
