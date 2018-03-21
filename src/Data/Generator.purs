@@ -70,6 +70,12 @@ capitalize s =
       rest = drop 1 s
   in h <> rest
 
+ensureValidType :: String -> String
+ensureValidType s =
+  let startChar = take 1 s
+  -- if the first character is the same when both lowercase and uppercase it cannot be a valid type name (e.g. underscores)
+  in if toUpper startChar == toLower startChar then "FnT" <> s else s
+
 lowerCase :: String -> String
 lowerCase s =
   let h = toLower $ take 1 s
@@ -158,7 +164,7 @@ funToTypeDecl fun@(SolidityFunction f) opts = do
     toPSType $ fi.type
   pure $
     FunTypeDecl
-      { typeName: capitalize $ opts.exprPrefix <> f.name <> "Fn"
+      { typeName: ensureValidType $ capitalize $ opts.exprPrefix <> f.name <> "Fn"
       , factorTypes
       , signature: toSignature fun
       }
