@@ -2,11 +2,13 @@ module Data.AbiParser where
 
 import Prelude
 
+import Control.Error.Util (note)
 import Control.Alternative ((<|>))
+import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.?))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
-import Data.Array (fromFoldable)
+import Data.Array (fromFoldable, uncons, (:))
 import Data.Either (Either(..))
 import Data.EitherR (fmapL)
 import Data.Foldable (foldMap)
@@ -309,6 +311,17 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
 
 newtype Abi = Abi (Array AbiType)
 
-derive newtype instance decodeJsonAbi :: DecodeJson Abi
+instance decodeJsonAbi :: DecodeJson Abi where
+  decodeJson json = do
+    arr <- note "Failed to decode ABI as Array type." $ A.toArray json
+    pure $ Abi $ catEithers $ map decodeJson arr
+    where
+      catEithers :: forall a b. Array (Either a b) -> Array b
+      catEithers es = case uncons es of
+        Just {head, tail} -> case head of
+          Right b -> b : catEithers tail
+          Left _ -> catEithers tail
+        Nothing -> []
+
 
 derive newtype instance showAbi :: Show Abi
