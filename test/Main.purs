@@ -14,7 +14,7 @@ import Test.Spec (Spec, describe, it)
 import Data.Either (Either, either, isRight)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile)
-import Data.Generator (generatePS, parseAbi)
+import Data.CodeGen (generatePS, parseAbi)
 import Data.AbiParser (Abi)
 
 main :: Eff (RunnerEffects (fs :: FS, console :: CONSOLE )) Unit
@@ -32,19 +32,17 @@ simpleStorageParserSpec =
       isRight eabi `shouldEqual` true
 
     it "can generate an encoding instance" do
-      generatePS 
+      generatePS
         { jsonDir: "./abi-data/truffle/build/contracts"
         , pursDir: "./contracts"
         , truffle: true
         , exprPrefix: ""
         , modulePrefix: "ContractsTruffle"
-        , indentationLevel: 0
         }
-      generatePS 
+      generatePS
         { jsonDir: "./abi-data/abis"
         , pursDir: "./contracts"
         , truffle: false
         , exprPrefix: ""
         , modulePrefix: "Contracts"
-        , indentationLevel: 0
         }
