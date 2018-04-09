@@ -26,7 +26,7 @@ import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard, mempty)
 import Data.NonEmpty ((:|))
-import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, split, take, toCharArray, toLower, toUpper)
+import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, take, toCharArray, toLower, toUpper)
 import Data.String.Regex (Regex, test) as Rgx
 import Data.String.Regex.Flags (noFlags) as Rgx
 import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
@@ -34,7 +34,8 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types (HexString, unHex, sha3)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir)
+import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 
 --------------------------------------------------------------------------------
@@ -715,7 +716,7 @@ generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE |
 generatePS os = do
     let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
     fs <- readdir opts.jsonDir
-    mkdirP opts.pursDir
+    liftEff $ mkdirp opts.pursDir
     case fs of
       [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
       fs' -> for_ (filter (\f -> extname f == ".json") fs') $ \f -> do
@@ -732,23 +733,6 @@ generatePS os = do
     genPSFileName :: GeneratorOptions -> FilePath -> FilePath
     genPSFileName opts fp =
         opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
-
-mkdirP :: forall r. FilePath -> Aff (fs :: FS, console :: CONSOLE | r) Unit
-mkdirP dir =
-  void $ foldl mkdirAppend (pure "") (split (Pattern "/") dir)
-  where
-  mkdirAppend prev current = do
-    p <- prev
-    let
-      next = if p == ""
-        then current
-        else p <> "/" <> current
-    folderExists <- exists next
-    unless folderExists do
-      liftEff $ log $ "Folder: `" <> next <> "` doesn't exists, creating."
-      mkdir next
-    pure next
-
 
 fileNameRegex :: Rgx.Regex
 fileNameRegex =
