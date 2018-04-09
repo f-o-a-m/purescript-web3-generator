@@ -26,7 +26,7 @@ import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
 import Data.Monoid (guard, mempty)
 import Data.NonEmpty ((:|))
-import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, split, take, toCharArray, toLower, toUpper)
+import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, take, toCharArray, toLower, toUpper)
 import Data.String.Regex (Regex, test) as Rgx
 import Data.String.Regex.Flags (noFlags) as Rgx
 import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
