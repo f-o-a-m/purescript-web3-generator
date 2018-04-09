@@ -34,7 +34,7 @@ import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types (HexString, unHex, sha3)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir)
 import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 
