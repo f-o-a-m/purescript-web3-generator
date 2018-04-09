@@ -70,11 +70,11 @@ capitalize s =
       rest = drop 1 s
   in h <> rest
 
-ensureValidType :: String -> String
-ensureValidType s =
+isValidType :: String -> Boolean
+isValidType s =
   let startChar = take 1 s
   -- if the first character is the same when both lowercase and uppercase it cannot be a valid type name (e.g. underscores)
-  in if toUpper startChar == toLower startChar then "FnT" <> s else s
+  in toUpper startChar /= toLower startChar
 
 lowerCase :: String -> String
 lowerCase s =
@@ -164,7 +164,7 @@ funToTypeDecl fun@(SolidityFunction f) opts = do
     toPSType $ fi.type
   pure $
     FunTypeDecl
-      { typeName: ensureValidType $ capitalize $ opts.exprPrefix <> f.name <> "Fn"
+      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
       , factorTypes
       , signature: toSignature fun
       }
@@ -425,7 +425,7 @@ eventToDataDecl (SolidityEvent ev) = do
     t <- toPSType sv.type
     pure $ Tuple sv.name t
   pure $ EventDataDecl
-    { constructor: ev.name
+    { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
     , indexedTypes
     , nonIndexedTypes
     , recordType
@@ -537,7 +537,7 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
   pure $
     EventFilterInstance
       { instanceName: "eventFilter" <> capitalize decl.constructor
-      , instanceType: capitalize decl.constructor
+      , instanceType: decl.constructor
       , filterDef: "eventFilter _ addr = " <> filterExpr
       }
   where
