@@ -4,31 +4,32 @@ import Prelude
 import Ansi.Codes (Color(Green))
 import Ansi.Output (withGraphics, foreground)
 import Control.Error.Util (note)
-import Control.Monad.Aff (Aff)
+import Control.Monad.Aff (Aff, try)
+import Control.Monad.Aff.Class (class MonadAff, liftAff)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
+import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (runWriter)
 import Data.AbiParser (Abi)
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, nub, sort)
-import Data.Either (Either, either)
+import Data.Array (nub, sort, null, catMaybes, concat)
+import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
-import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, split)
-import Data.String.Regex (Regex, test) as Rgx
-import Data.String.Regex.Flags (noFlags) as Rgx
-import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
+import Data.String (Pattern(..), Replacement(..), replace, joinWith, replaceAll, split, stripPrefix)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists, stat)
+import Node.FS.Stats as Stats
 import Node.Path (FilePath, basenameWithoutExt, extname)
 
 import Data.Generator (ModuleName, Imports, ModuleImports, ModuleImport(..), genCode, newLine1, mkComment)
@@ -90,24 +91,21 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
 generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
 generatePS os = do
     let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
-    fs <- readdir opts.jsonDir
+    fs <- getAllJsonFiles opts.jsonDir
     mkdirP opts.pursDir
     case fs of
       [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-      fs' -> for_ (filter (\f -> extname f == ".json") fs') $ \f -> do
-        if Rgx.test fileNameRegex (basenameWithoutExt f ".json")
-          then do
-            let f' = genPSFileName opts f
-            writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
-            let successCheck = withGraphics (foreground Green) $ "✔"
-                successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
-            liftEff <<< log $ successMsg
-          else
-            throwError <<< error $ "Got abi json file wich has invalid name: `" <> f <> "`"
+      fs' -> for_ fs' $ \f -> do
+        let f' = genPSFileName opts f
+        writeCodeFromAbi opts f f'
+        let successCheck = withGraphics (foreground Green) $ "✔"
+            successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> f'
+        liftEff <<< log $ successMsg
   where
     genPSFileName :: GeneratorOptions -> FilePath -> FilePath
     genPSFileName opts fp =
-        opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
+      replace (Pattern opts.jsonDir) (Replacement opts.pursDir) $
+        replace (Pattern ".json") (Replacement ".purs") fp
 
 mkdirP :: forall r. FilePath -> Aff (fs :: FS, console :: CONSOLE | r) Unit
 mkdirP dir =
@@ -124,10 +122,6 @@ mkdirP dir =
       liftEff $ log $ "Folder: `" <> next <> "` doesn't exists, creating."
       mkdir next
     pure next
-
-fileNameRegex :: Rgx.Regex
-fileNameRegex =
-  Rgx.unsafeRegex "^[A-Z][A-Za-z\\d]*$" Rgx.noFlags
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
@@ -152,3 +146,88 @@ genPSModuleStatement opts fp = comment <> "\n"
   <> " where\n"
     where
   comment = mkComment [basenameWithoutExt fp ".purs"]
+
+
+--------------------------------------------------------------------------------
+-- | Helpers
+--------------------------------------------------------------------------------
+
+-- get all the "valid" directories rooted in a filepath
+getAllDirectories
+  :: forall eff m.
+     MonadAff (fs :: FS | eff) m
+  => MonadState FilePath m
+  => m (Array FilePath)
+getAllDirectories = do
+  currentDirectory <- get
+  allFiles <- liftAff $ readdir currentDirectory
+  mdirs <- for allFiles (validateRootedDir currentDirectory)
+  pure $ catMaybes mdirs
+
+-- determine whether or not a directory is valid (basically it's not dotted)
+validateRootedDir
+  :: forall eff m.
+     MonadAff (fs :: FS | eff) m
+  => FilePath -- prefix
+  -> FilePath -- dirname
+  -> m (Maybe FilePath)
+validateRootedDir prefix dir = liftAff $ do
+  let fullPath = prefix <> "/" <> dir
+  estat <- try $ stat fullPath
+  pure case estat of
+    Left _ -> Nothing
+    Right s ->
+      let isValid = Stats.isDirectory s && isNothing (stripPrefix (Pattern ".") dir)
+      in if isValid
+        then Just fullPath
+        else Nothing
+
+-- | get all files in a directory with a ".json" extension
+getJsonFilesInDirectory
+  :: forall eff m.
+     MonadAff (fs :: FS | eff) m
+  => MonadState FilePath m
+  => m (Array FilePath)
+getJsonFilesInDirectory = do
+  currentDirectory <- get
+  allFiles <- liftAff $ readdir currentDirectory
+  msolcs <- for allFiles (validateFile currentDirectory)
+  pure $ catMaybes msolcs
+
+-- | determine whether the file is a .json artifact
+validateFile
+  :: forall eff m.
+     MonadAff (fs :: FS | eff) m
+  => FilePath -- dir
+  -> FilePath -- filepath
+  -> m (Maybe FilePath)
+validateFile dir f = liftAff $ do
+  let fullPath = dir <> "/" <> f
+  estat <- try $ stat fullPath
+  pure case estat of
+    Left _ -> Nothing
+    Right s ->
+      let isValid = Stats.isFile s && extname f == ".json"
+      in if isValid
+            then Just fullPath
+            else Nothing
+
+getAllJsonFiles
+  :: forall eff m.
+     MonadAff (fs :: FS | eff) m
+  => FilePath
+  -> m (Array FilePath)
+getAllJsonFiles root = evalStateT getAllJsonFiles' root
+  where
+    getAllJsonFiles' :: StateT FilePath m (Array FilePath)
+    getAllJsonFiles' = do
+      cd <- get
+      hereFiles <- getJsonFilesInDirectory
+      hereDirectories <- getAllDirectories
+      if null hereDirectories
+         then pure hereFiles
+         else do
+              thereFiles <- for hereDirectories $ \d -> do
+                              put d
+                              getAllJsonFiles'
+              pure $ hereFiles <> concat thereFiles
