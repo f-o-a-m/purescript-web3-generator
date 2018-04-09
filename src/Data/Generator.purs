@@ -636,5 +636,3 @@ instance codeAbi :: Code Abi where
         -- so it's like, you would never call it on purpose, so we ignore it.
         pure ""
     pure $ newLine2 codes
-
-

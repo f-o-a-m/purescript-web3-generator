@@ -24,13 +24,15 @@ import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
-import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, split, stripPrefix)
+import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, mkdir, exists, stat)
+import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, stat)
 import Node.FS.Stats as Stats
-import Node.Path (FilePath, basenameWithoutExt, extname, dirname)
+import Node.FS.Sync.Mkdirp (mkdirp)
+import Node.Path (FilePath, basenameWithoutExt, extname)
+
 
 import Data.Generator (ModuleName, Imports, ModuleImports, ModuleImport(..), genCode, newLine1, mkComment)
 
@@ -92,12 +94,11 @@ generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE |
 generatePS os = do
     let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
     fs <- getAllJsonFiles opts.jsonDir
-    mkdirP opts.pursDir
+    liftEff $ mkdirp opts.pursDir
     case fs of
       [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
       fs' -> for_ fs' $ \f -> do
         let f' = genPSFileName opts f
-        mkdirP $ dirname f'
         writeCodeFromAbi opts f f'
         let successCheck = withGraphics (foreground Green) $ "✔"
             successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> f'
@@ -105,23 +106,6 @@ generatePS os = do
   where
     genPSFileName :: GeneratorOptions -> FilePath -> FilePath
     genPSFileName opts fp = opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
-
-
-mkdirP :: forall r. FilePath -> Aff (fs :: FS, console :: CONSOLE | r) Unit
-mkdirP dir =
-    void $ foldl mkdirAppend (pure "") (split (Pattern "/") dir)
-  where
-    mkdirAppend prev current = do
-      p <- prev
-      let
-        next = if p == ""
-          then current
-          else p <> "/" <> current
-      folderExists <- exists next
-      unless folderExists do
-        liftEff $ log $ "Folder: `" <> next <> "` doesn't exists, creating."
-        mkdir next
-      pure next
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
