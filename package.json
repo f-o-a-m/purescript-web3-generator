@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build": "pulp build -- --strict",
-    "test": "pulp test && pulp build -I contracts -- --strict"
+    "test": "rm -rf contracts; pulp test && pulp build -I contracts -- --strict"
   },
   "dependencies": {
     "bignumber.js": "^4.0.2",

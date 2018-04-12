@@ -2,41 +2,19 @@ module Data.Generator where
 
 import Prelude
 
-import Ansi.Codes (Color(Green))
-import Ansi.Output (withGraphics, foreground)
-import Control.Error.Util (note)
-import Control.Monad.Aff (Aff)
-import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Console (CONSOLE, log)
-import Control.Monad.Eff.Exception (error)
-import Control.Monad.Error.Class (throwError)
-import Control.Monad.Writer (Writer, runWriter, tell)
+import Control.Monad.Writer (Writer, tell)
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Argonaut (Json, decodeJson)
-import Data.Argonaut.Parser (jsonParser)
-import Data.Argonaut.Prisms (_Object)
-import Data.Array (filter, length, mapWithIndex, nub, null, replicate, sort, uncons, zip, zipWith, (:))
-import Data.Either (Either, either)
-import Data.Foldable (all, fold, foldl, for_)
-import Data.Lens ((^?))
-import Data.Lens.Index (ix)
+import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, zip, zipWith, (:))
+import Data.Foldable (all, fold)
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
-import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..))
-import Data.Monoid (guard, mempty)
+import Data.Monoid (guard)
 import Data.NonEmpty ((:|))
-import Data.String (Pattern(..), Replacement(..), drop, fromCharArray, joinWith, replaceAll, singleton, take, toCharArray, toLower, toUpper)
-import Data.String.Regex (Regex, test) as Rgx
-import Data.String.Regex.Flags (noFlags) as Rgx
-import Data.String.Regex.Unsafe (unsafeRegex) as Rgx
+import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Web3.Types (HexString, unHex, sha3)
-import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir)
-import Node.FS.Sync.Mkdirp (mkdirp)
-import Node.Path (FilePath, basenameWithoutExt, extname)
 
 --------------------------------------------------------------------------------
 type ModuleName = String
@@ -53,8 +31,13 @@ data ModuleImport
 type Imports = Array (Tuple ModuleName ModuleImports)
 type Imported = Writer Imports
 
+type CodeOptions =
+  { exprPrefix :: String
+  , indentationLevel :: Int
+  }
+
 class Code a where
-  genCode :: a -> GeneratorOptions -> Imported String
+  genCode :: a -> CodeOptions -> Imported String
 
 --------------------------------------------------------------------------------
 -- | Utils
@@ -159,7 +142,7 @@ data FunTypeDecl =
               , typeName :: String
               }
 
-funToTypeDecl :: SolidityFunction -> GeneratorOptions -> Imported FunTypeDecl
+funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) opts = do
   factorTypes <- for f.inputs $ \(FunctionInput fi) ->
     toPSType $ fi.type
@@ -209,7 +192,7 @@ data HelperFunction
       , whereClause :: String
       }
 
-funToHelperFunction :: Boolean -> SolidityFunction -> GeneratorOptions -> Imported CurriedHelperFunctionR
+funToHelperFunction :: Boolean -> SolidityFunction -> CodeOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   (FunTypeDecl decl) <- funToTypeDecl fun opts
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
@@ -261,7 +244,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
     , quantifiedVars: quantifiedVars
     }
 
-funToHelperFunction' :: SolidityFunction -> GeneratorOptions -> Imported HelperFunction
+funToHelperFunction' :: SolidityFunction -> CodeOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
     (FunTypeDecl decl) <- funToTypeDecl fun opts
     import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
@@ -586,7 +569,7 @@ data CodeBlock =
     FunctionCodeBlock FunTypeDecl HelperFunction
   | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
 
-funToFunctionCodeBlock :: SolidityFunction -> GeneratorOptions -> Imported CodeBlock
+funToFunctionCodeBlock :: SolidityFunction -> CodeOptions -> Imported CodeBlock
 funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
     typeDecl <- funToTypeDecl fun opts
     helperFunction <- if isUnCurried f
@@ -653,111 +636,3 @@ instance codeAbi :: Code Abi where
         -- so it's like, you would never call it on purpose, so we ignore it.
         pure ""
     pure $ newLine2 codes
-
---------------------------------------------------------------------------------
--- | Tools to read and write the files
---------------------------------------------------------------------------------
-
-type GeneratorOptions =
-  { jsonDir :: FilePath
-  , pursDir :: FilePath
-  , truffle :: Boolean
-  , exprPrefix :: String
-  , modulePrefix :: String
-  , indentationLevel :: Int
-  }
-
-data IsCtrInImports = CtrIsInImports | CtrIsNotInImports
-type ModuleImportsAcc = { types :: Map ModuleName IsCtrInImports, imports :: Array String }
-
-runImports :: Imports -> String
-runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n\n" <> _)
-  where
-    runImport :: Tuple ModuleName ModuleImports -> String
-    runImport (Tuple mName mImports) = "import " <> mName <> " (" <> joinWith ", " (runModuleImports mImports) <> ")"
-    runModuleImports :: ModuleImports -> Array String
-    runModuleImports =
-      runAcc <<< foldl f { types: mempty, imports: mempty }
-      where
-      runAcc :: ModuleImportsAcc -> Array String
-      runAcc acc = sort $ nub $ append acc.imports $ (toAscUnfoldable acc.types) >>= resolveCtrImports
-      resolveCtrImports :: Tuple String IsCtrInImports -> Array String
-      resolveCtrImports (Tuple typeName isCtrInImports) = case isCtrInImports of
-        CtrIsInImports -> []
-        CtrIsNotInImports -> [typeName]
-      f :: ModuleImportsAcc -> ModuleImport -> ModuleImportsAcc
-      f acc = case _ of
-        IType a ->
-          if member a acc.types
-            then acc
-            else acc{ types = insert a CtrIsNotInImports acc.types}
-        ITypeCtr a ->
-          case lookup a acc.types of
-            Nothing ->
-              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-            Just CtrIsInImports ->
-              acc
-            Just CtrIsNotInImports ->
-              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-        ITypeOp a ->
-          acc {imports = acc.imports <> [ "type (" <> a <> ")" ]}
-        IClass a ->
-          acc {imports = acc.imports <> [ "class " <> a ]}
-        IVal a ->
-          acc {imports = acc.imports <> [ a ]}
-        IOp a ->
-          acc {imports = acc.imports <> [ "(" <> a <> ")" ]}
-
-    -- NOTE this also sorts modules as we use toAscUnfoldable
-    mergeImports :: Imports -> Imports
-    mergeImports = fromFoldableWith append >>> toAscUnfoldable
-
-generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
-generatePS os = do
-    let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
-    fs <- readdir opts.jsonDir
-    liftEff $ mkdirp opts.pursDir
-    case fs of
-      [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-      fs' -> for_ (filter (\f -> extname f == ".json") fs') $ \f -> do
-        if Rgx.test fileNameRegex (basenameWithoutExt f ".json")
-          then do
-            let f' = genPSFileName opts f
-            writeCodeFromAbi opts (opts.jsonDir <> "/" <> f) f'
-            let successCheck = withGraphics (foreground Green) $ "✔"
-                successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> opts.pursDir
-            liftEff <<< log $ successMsg
-          else
-            throwError <<< error $ "Got abi json file wich has invalid name: `" <> f <> "`"
-  where
-    genPSFileName :: GeneratorOptions -> FilePath -> FilePath
-    genPSFileName opts fp =
-        opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
-
-fileNameRegex :: Rgx.Regex
-fileNameRegex =
-  Rgx.unsafeRegex "^[A-Z][A-Za-z\\d]*$" Rgx.noFlags
-
--- | read in json abi and write the generated code to a destination file
-writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
-writeCodeFromAbi opts abiFile destFile = do
-    ejson <- jsonParser <$> readTextFile UTF8 abiFile
-    json <- either (throwError <<< error) pure ejson
-    (abi :: Abi) <- either (throwError <<< error) pure $ parseAbi opts json
-    let (Tuple code accImports) = runWriter $ genCode abi opts
-    writeTextFile UTF8 destFile $ genPSModuleStatement opts destFile <> "\n"
-      <> if code == "" then "" else runImports accImports <> "\n" <> code
-
-parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String Abi
-parseAbi {truffle} abiJson = case truffle of
-  false -> decodeJson abiJson
-  true -> let mabi = abiJson ^? _Object <<< ix "abi"
-          in note "truffle artifact missing abi field" mabi >>= decodeJson
-
-genPSModuleStatement :: GeneratorOptions -> FilePath -> String
-genPSModuleStatement opts fp = comment <> "\n"
-  <> "module " <> opts.modulePrefix <> "."
-  <> basenameWithoutExt fp ".purs"
-  <> " where\n"
-    where
-  comment = mkComment [basenameWithoutExt fp ".purs"]
