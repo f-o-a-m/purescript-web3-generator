@@ -7,7 +7,7 @@
     "purescript",
     "web3"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "ignore": [
     "*",
     "!src/**/*",
