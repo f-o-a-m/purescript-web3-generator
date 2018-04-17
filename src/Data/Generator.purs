@@ -14,7 +14,9 @@ import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Network.Ethereum.Web3.Types (HexString, unHex, sha3)
+import Network.Ethereum.Web3.Types (HexString, unHex)
+import Network.Ethereum.Core.HexString (fromByteString)
+import Network.Ethereum.Core.Keccak256 (keccak256)
 
 --------------------------------------------------------------------------------
 type ModuleName = String
@@ -512,7 +514,7 @@ instance codeEventFilterInstance :: Code EventFilterInstance where
 eventId :: SolidityEvent -> HexString
 eventId (SolidityEvent e) =
   let eventArgs = map (\a -> format a) e.inputs
-  in sha3 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
+  in fromByteString <<< keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
 
 eventToEventFilterInstance :: SolidityEvent -> Imported EventFilterInstance
 eventToEventFilterInstance ev@(SolidityEvent e) = do
