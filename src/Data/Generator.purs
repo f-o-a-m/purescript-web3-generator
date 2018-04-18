@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Monad.Writer (Writer, tell)
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, unsnoc, zip, zipWith, (:))
 import Data.Foldable (all, fold)
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
@@ -14,9 +14,10 @@ import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Network.Ethereum.Web3.Types (HexString, unHex)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
+import Network.Ethereum.Web3.Types (HexString, unHex)
+import Partial.Unsafe (unsafeCrashWith)
 
 --------------------------------------------------------------------------------
 type ModuleName = String
@@ -45,10 +46,13 @@ class Code a where
 -- | Utils
 --------------------------------------------------------------------------------
 
+paren :: String -> String
+paren s = "(" <> s <> ")"
+
 toSignature :: SolidityFunction -> String
 toSignature (SolidityFunction f) =
   let args = map (\i -> format i) f.inputs
-  in f.name <> "(" <> joinWith "," args <> ")"
+  in f.name <> paren (joinWith "," args)
 
 capitalize :: String -> String
 capitalize s =
@@ -75,22 +79,23 @@ makeDigits n = do
     let d' = "D" <> d
     import' "Network.Ethereum.Web3.Solidity" [IType d']
     pure d'
-  let consed = joinWith " :& " ddigits
-  if length ddigits == 1
-    then pure consed
-    else do
-    import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":&"]
-    pure $ "(" <> consed <> ")"
+  map paren case unsnoc ddigits of
+    Nothing -> unsafeCrashWith "imposible case reached in makeDigits"
+    Just { init:init1, last:last1 } -> case unsnoc init1 of
+      Nothing -> do
+        import' "Network.Ethereum.Web3.Solidity" [IType "DOne"]
+        pure $ "DOne " <> last1
+      Just { init:init2, last:last2 } -> do
+        import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":%"]
+        let last2digits = last2 <> " :% "<> last1
+        if null init2
+          then pure last2digits
+          else do
+            import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":&"]
+            pure $ joinWith " :& " init2 <> " :& " <> last2digits
 
 import' :: ModuleName -> ModuleImports -> Imported Unit
 import' mName mImports = tell [ Tuple mName mImports ]
-
-vectorLength :: Int -> Imported String
-vectorLength n = do
-  import' "Network.Ethereum.Web3.Solidity" $ [IType "Z"] <> guard (n > 0) [IType "S"]
-  pure $ "(" <> go n <> ")"
-  where
-    go m = if m == 0 then "Z" else "S (" <> go (m - 1) <> ")"
 
 toPSType :: SolidityType -> Imported String
 toPSType s = case s of
@@ -102,17 +107,17 @@ toPSType s = case s of
     SolidityUint n -> do
       import' "Network.Ethereum.Web3.Solidity" [IType "UIntN"]
       digits <- makeDigits n
-      pure $ "(" <> "UIntN " <> digits <> ")"
+      pure $ paren $ "UIntN " <> digits
     SolidityInt n -> do
       import' "Network.Ethereum.Web3.Solidity" [IType "IntN"]
       digits <- makeDigits n
-      pure $ "(" <> "IntN " <> digits <> ")"
+      pure $ paren $ "IntN " <> digits
     SolidityString -> do
       pure "String"
     SolidityBytesN n -> do
       import' "Network.Ethereum.Web3.Solidity" [IType "BytesN"]
       digits <- makeDigits n
-      pure $ "(" <> "BytesN " <> digits <> ")"
+      pure $ paren $ "BytesN " <> digits
     SolidityBytesD -> do
       import' "Network.Ethereum.Web3.Solidity" [IType "ByteString"]
       pure "ByteString"
@@ -120,18 +125,18 @@ toPSType s = case s of
       expandVector ns a
     SolidityArray a -> do
       t <- toPSType a
-      pure $ "(" <> "Array " <> t <> ")"
+      pure $ paren $ "Array " <> t
   where
   expandVector (List.NonEmptyList (n :| ns)) a' = do
-      l <- vectorLength n
+      l <- makeDigits n
       import' "Network.Ethereum.Web3" [IType "Vector"]
       case List.uncons ns of
         Nothing -> do
           x <- toPSType a'
-          pure $ "(" <> "Vector " <> l <> " " <> x <> ")"
+          pure $ paren $ "Vector " <> l <> " " <> x
         Just {head, tail} -> do
           x <- expandVector (List.NonEmptyList $ head :| tail) a'
-          pure $ "(" <> "Vector " <> l <> " " <> x <> ")"
+          pure $ paren $ "Vector " <> l <> " " <> x
 
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers
@@ -365,8 +370,8 @@ toReturnType constant outputs' = do
         Just _ -> do
           let tupleType = "Tuple" <> show (length outputs)
           import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
-          pure $ "(" <> tupleType <> " " <> joinWith " " outputs <> ")"
-      pure $ "Web3 e " <> "(Either CallError " <> out <> ")"
+          pure $ paren $ tupleType <> " " <> joinWith " " outputs
+      pure $ "Web3 e " <> paren ("Either CallError " <> out)
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (CurriedHelperFunction h) opts =
@@ -486,8 +491,8 @@ eventToDecodeEventInstance event@(SolidityEvent ev) = do
   let
     indexedTupleType = "Tuple" <> show (length decl.indexedTypes)
     nonIndexedTupleType = "Tuple" <> show (length decl.nonIndexedTypes)
-    indexedTuple = "(" <> indexedTupleType <> " " <> joinWith " " indexedTypesTagged <> ")"
-    nonIndexedTuple = "(" <> nonIndexedTupleType <> " " <> joinWith " " nonIndexedTypesTagged <> ")"
+    indexedTuple = paren $ indexedTupleType <> " " <> joinWith " " indexedTypesTagged
+    nonIndexedTuple = paren $ nonIndexedTupleType <> " " <> joinWith " " nonIndexedTypesTagged
   import' "Network.Ethereum.Web3.Solidity" [IType indexedTupleType, IType nonIndexedTupleType]
   pure $ EventDecodeInstance {indexedTuple, nonIndexedTuple, combinedType: decl.constructor, anonymous: ev.anonymous}
   where
@@ -514,7 +519,7 @@ instance codeEventFilterInstance :: Code EventFilterInstance where
 eventId :: SolidityEvent -> HexString
 eventId (SolidityEvent e) =
   let eventArgs = map (\a -> format a) e.inputs
-  in fromByteString <<< keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
+  in fromByteString $ keccak256 $ e.name <> paren (joinWith "," eventArgs)
 
 eventToEventFilterInstance :: SolidityEvent -> Imported EventFilterInstance
 eventToEventFilterInstance ev@(SolidityEvent e) = do
