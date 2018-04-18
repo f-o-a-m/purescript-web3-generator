@@ -2,8 +2,8 @@ module Data.AbiParser where
 
 import Prelude
 
-import Control.Alternative ((<|>))
 import Control.Error.Util (note)
+import Control.Alternative ((<|>))
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.?))
@@ -12,12 +12,12 @@ import Data.Array (fromFoldable, uncons, (:))
 import Data.Either (Either(..))
 import Data.EitherR (fmapL)
 import Data.Foldable (foldMap)
+import Data.Generic (class Generic, gShow)
+import Data.Int (fromString)
 import Data.List.Types (NonEmptyList(..))
 import Data.Maybe (Maybe(..), maybe)
 import Data.NonEmpty ((:|))
-import Data.Record.Extra (showRecord)
 import Data.String (fromCharArray)
-import Network.Ethereum.Core.BigNumber (BigNumber, decimal, parseBigNumber, toString)
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
 import Text.Parsing.StringParser.Combinators (lookAhead, choice, manyTill, optionMaybe, many1)
 import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
@@ -31,40 +31,32 @@ class Format a where
 -- | Solidity Type Parsers
 --------------------------------------------------------------------------------
 
-data SolidityType
-  = SolidityBool
+data SolidityType =
+    SolidityBool
   | SolidityAddress
-  | SolidityUint BigNumber
-  | SolidityInt BigNumber
+  | SolidityUint Int
+  | SolidityInt Int
   | SolidityString
-  | SolidityBytesN BigNumber
+  | SolidityBytesN Int
   | SolidityBytesD
-  | SolidityVector (NonEmptyList BigNumber) SolidityType
+  | SolidityVector (NonEmptyList Int) SolidityType
   | SolidityArray SolidityType
 
+derive instance genericSolidityType :: Generic SolidityType
 
 instance showSolidityType :: Show SolidityType where
-  show = case _ of
-    SolidityBool -> "(SolidityBool)"
-    SolidityAddress -> "(SolidityAddress)"
-    SolidityUint n -> "(SolidityUint "<> show n <> ")"
-    SolidityInt n -> "(SolidityInt "<> show n <> ")"
-    SolidityString -> "(SolidityString)"
-    SolidityBytesN n -> "(SolidityBytesN "<> show n <> ")"
-    SolidityBytesD -> "(SolidityBytesD)"
-    SolidityVector ns st -> "(SolidityVector "<> show ns <> " " <> show st <> ")"
-    SolidityArray st -> "(SolidityArray "<> show st <> ")"
+  show = gShow
 
 instance formatSolidityType :: Format SolidityType where
   format s = case s of
     SolidityBool -> "bool"
     SolidityAddress -> "address"
-    SolidityUint n -> "uint" <> toString decimal n
-    SolidityInt n -> "int" <> toString decimal n
+    SolidityUint n -> "uint" <> show n
+    SolidityInt n -> "int" <> show n
     SolidityString -> "string"
-    SolidityBytesN n -> "bytes" <> toString decimal n
+    SolidityBytesN n -> "bytes" <> show n
     SolidityBytesD -> "bytes"
-    SolidityVector ns a -> format a <> foldMap (\n -> "[" <> toString decimal n <> "]") ns
+    SolidityVector ns a -> format a <> foldMap (\n -> "[" <> show n <> "]") ns
     SolidityArray a -> format a <> "[]"
 
 parseUint :: Parser SolidityType
@@ -85,10 +77,10 @@ parseBool = string "bool" >>= \_ -> pure SolidityBool
 parseString :: Parser SolidityType
 parseString = string "string" >>= \_ -> pure SolidityString
 
-numberParser :: Parser BigNumber
+numberParser :: Parser Int
 numberParser = do
   n <- fromCharArray <<< fromFoldable <$> many1 anyDigit
-  case parseBigNumber decimal n of
+  case fromString n of
     Nothing -> fail $ "Couldn't parse as Natural : " <> n
     Just n' -> pure $ n'
 
@@ -159,8 +151,10 @@ newtype FunctionInput =
                 , type :: SolidityType
                 }
 
+derive instance genericFunctionInput :: Generic FunctionInput
+
 instance showFunctionInput :: Show FunctionInput where
-  show (FunctionInput r)= "(FunctionInput " <> showRecord r <> ")"
+  show = gShow
 
 instance formatInput :: Format FunctionInput where
   format (FunctionInput fi) = format fi.type
@@ -182,8 +176,11 @@ data SolidityFunction =
                    , payable :: Boolean
                    , isConstructor :: Boolean
                    }
+
+derive instance genericSolidityFunction :: Generic SolidityFunction
+
 instance showSolidityFunction :: Show SolidityFunction where
-  show (SolidityFunction r) = "(SolidityFunction " <> showRecord r <> ")"
+  show = gShow
 
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
@@ -209,8 +206,10 @@ data SolidityConstructor =
   SolidityConstructor { inputs :: Array FunctionInput
                       }
 
+derive instance genericSolidityConstructor :: Generic SolidityConstructor
+
 instance showSolidityConstructor :: Show SolidityConstructor where
-  show (SolidityConstructor r)= "(SolidityConstructor " <> showRecord r <> ")"
+  show = gShow
 
 instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
   decodeJson json = do
@@ -229,8 +228,10 @@ data IndexedSolidityValue =
                        , indexed :: Boolean
                        }
 
+derive instance genericSolidityIndexedValue :: Generic IndexedSolidityValue
+
 instance showSolidityIndexedValue :: Show IndexedSolidityValue where
-  show (IndexedSolidityValue r)= "(IndexedSolidityValue " <> showRecord r <> ")"
+  show = gShow
 
 instance formatIndexedSolidityValue :: Format IndexedSolidityValue where
   format (IndexedSolidityValue v) = format v.type
@@ -253,8 +254,10 @@ data SolidityEvent =
                 , inputs :: Array IndexedSolidityValue
                 }
 
+derive instance genericSolidityEvent :: Generic SolidityEvent
+
 instance showSolidityEvent :: Show SolidityEvent where
-  show (SolidityEvent r) = "(SolidityEvent " <> showRecord r <> ")"
+  show = gShow
 
 instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
   decodeJson json = do
@@ -269,8 +272,10 @@ instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
 
 data SolidityFallback = SolidityFallback
 
+derive instance genericSolidityFallback :: Generic SolidityFallback
+
 instance showSolidityFallback :: Show SolidityFallback where
-  show _ = "(SolidityFallback)"
+  show = gShow
 
 instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
   decodeJson json = do
@@ -280,18 +285,16 @@ instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
 -- | ABI
 --------------------------------------------------------------------------------
 
-data AbiType
-  = AbiFunction SolidityFunction
+data AbiType =
+    AbiFunction SolidityFunction
   | AbiConstructor SolidityConstructor
   | AbiEvent SolidityEvent
   | AbiFallback SolidityFallback
 
+derive instance genericAbiType :: Generic AbiType
+
 instance showAbiType :: Show AbiType where
-  show = case _ of
-    AbiFunction r -> "(AbiFunction " <> show r <> ")"
-    AbiConstructor r -> "(AbiConstructor " <> show r <> ")"
-    AbiEvent r -> "(AbiEvent " <> show r <> ")"
-    AbiFallback r -> "(AbiFallback " <> show r <> ")"
+  show = gShow
 
 instance decodeJsonAbiType :: DecodeJson AbiType where
   decodeJson json = do

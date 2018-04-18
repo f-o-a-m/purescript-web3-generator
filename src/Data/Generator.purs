@@ -13,7 +13,6 @@ import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..), uncurry)
-import Network.Ethereum.Core.BigNumber (BigNumber, decimal, toString)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
@@ -72,9 +71,9 @@ lowerCase s =
       rest = drop 1 s
   in h <> rest
 
-makeDigits :: BigNumber -> Imported String
+makeDigits :: Int -> Imported String
 makeDigits n = do
-  let digits = map singleton <<< toCharArray <<< toString decimal $ n
+  let digits = map singleton <<< toCharArray <<< show $ n
   ddigits <- for digits \d -> do
     let d' = "D" <> d
     import' "Network.Ethereum.Web3.Solidity" [IType d']
