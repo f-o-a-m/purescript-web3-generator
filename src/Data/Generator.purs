@@ -9,7 +9,6 @@ import Data.Foldable (all, fold)
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..))
-import Data.Monoid (guard)
 import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
@@ -79,20 +78,14 @@ makeDigits n = do
     let d' = "D" <> d
     import' "Network.Ethereum.Web3.Solidity" [IType d']
     pure d'
+  import' "Network.Ethereum.Web3.Solidity" [IType "DOne"]
   map paren case unsnoc ddigits of
     Nothing -> unsafeCrashWith "imposible case reached in makeDigits"
-    Just { init:init1, last:last1 } -> case unsnoc init1 of
-      Nothing -> do
-        import' "Network.Ethereum.Web3.Solidity" [IType "DOne"]
-        pure $ "DOne " <> last1
-      Just { init:init2, last:last2 } -> do
-        import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":%"]
-        let last2digits = last2 <> " :% "<> last1
-        if null init2
-          then pure last2digits
-          else do
-            import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":&"]
-            pure $ joinWith " :& " init2 <> " :& " <> last2digits
+    Just { init, last }
+      | null init -> pure $ "DOne " <> last
+      | otherwise -> do
+        import' "Network.Ethereum.Web3.Solidity.Size" [ITypeOp ":&"]
+        pure $ joinWith " :& " init <> " :& " <> "DOne " <> last
 
 import' :: ModuleName -> ModuleImports -> Imported Unit
 import' mName mImports = tell [ Tuple mName mImports ]

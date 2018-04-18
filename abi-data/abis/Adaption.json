@@ -54,7 +54,7 @@
   {
     "constant": true,
     "inputs": [],
-    "name": "getAdoptersOneDigit",
+    "name": "getAdoptersTwoDigit",
     "outputs": [
       {
         "name": "",
