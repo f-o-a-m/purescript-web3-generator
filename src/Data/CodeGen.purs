@@ -1,29 +1,33 @@
 module Data.CodeGen where
 
 import Prelude
-import Ansi.Codes (Color(Green))
+
+import Ansi.Codes (Color(..))
 import Ansi.Output (withGraphics, foreground)
 import Control.Error.Util (note)
 import Control.Monad.Aff (Aff, try)
 import Control.Monad.Aff.Class (class MonadAff, liftAff)
+import Control.Monad.Aff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Console (CONSOLE, log)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
-import Control.Monad.Writer (runWriter)
-import Data.AbiParser (Abi)
+import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
+import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors)
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (nub, sort, null, catMaybes, concat)
+import Data.Array (catMaybes, concat, length, nub, null, sort)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
+import Data.Generator (ModuleName, Imports, ModuleImports, ModuleImport(..), genCode, newLine1, mkComment)
+import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
+import Data.Record.Extra (showRecord)
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -32,9 +36,6 @@ import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, stat)
 import Node.FS.Stats as Stats
 import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
-
-
-import Data.Generator (ModuleName, Imports, ModuleImports, ModuleImport(..), genCode, newLine1, mkComment)
 
 
 type GeneratorOptions =
@@ -90,34 +91,69 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
     mergeImports :: Imports -> Imports
     mergeImports = fromFoldableWith append >>> toAscUnfoldable
 
-generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) Unit
+generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) ABIErrors
 generatePS os = do
-    let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
-    fs <- getAllJsonFiles opts.jsonDir
-    liftEff $ mkdirp opts.pursDir
-    case fs of
-      [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
-      fs' -> for_ fs' $ \f -> do
+  let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
+  fs <- getAllJsonFiles opts.jsonDir
+  liftEff $ mkdirp opts.pursDir
+  case fs of
+    [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
+    fs' -> do
+      errs <- join <$> for fs' \f -> do
         let f' = genPSFileName opts f
-        writeCodeFromAbi opts f f'
-        let successCheck = withGraphics (foreground Green) $ "✔"
-            successMsg = successCheck <> " contract module for " <> f <> " successfully written to " <> f'
-        liftEff <<< log $ successMsg
+        Tuple _ errs <- runWriterT $ writeCodeFromAbi opts f f'
+        log if null errs
+          then successCheck <> " contract module for " <> f <> " successfully written to " <> f'
+          else warningCheck <> " (" <> show (length errs) <> ") contract module for " <> f <> " written to " <> f'
+        pure errs
+      unless (null errs) do
+        log $ errorCheck <> " got " <> show (length errs) <> " error(s) during generation"
+        for_ errs \(ABIError err) ->
+          log $ errorCheck <> " while parsing abi type of object at index: " <> show err.idx <> " from: " <> err.abiPath <> " got error:\n    " <> err.error
+      pure errs
   where
+    successCheck = withGraphics (foreground Green) $ "✔"
+    warningCheck = withGraphics (foreground Yellow) $ "⚠"
+    errorCheck = withGraphics (foreground Red) $ "⚠"
     genPSFileName :: GeneratorOptions -> FilePath -> FilePath
     genPSFileName opts fp = opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 
--- | read in json abi and write the generated code to a destination file
-writeCodeFromAbi :: forall e . GeneratorOptions -> FilePath -> FilePath -> Aff (fs :: FS | e) Unit
-writeCodeFromAbi opts abiFile destFile = do
-    ejson <- jsonParser <$> readTextFile UTF8 abiFile
-    json <- either (throwError <<< error) pure ejson
-    (abi :: Abi) <- either (throwError <<< error) pure $ parseAbi opts json
-    let (Tuple code accImports) = runWriter $ genCode abi {exprPrefix: opts.exprPrefix, indentationLevel: 0}
-    writeTextFile UTF8 destFile $ genPSModuleStatement opts destFile <> "\n"
-      <> if code == "" then "" else runImports accImports <> "\n" <> code
+type ABIErrors = Array ABIError
 
-parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String Abi
+newtype ABIError = ABIError { abiPath :: FilePath, idx :: Int, error :: String }
+
+instance showABIError :: Show ABIError where
+  show (ABIError r) = "(ABIError " <> showRecord r <> ")"
+
+-- | read in json abi and write the generated code to a destination file
+writeCodeFromAbi :: forall e m
+  . MonadAff (fs :: FS, console :: CONSOLE | e) m
+  => MonadTell ABIErrors m
+  => GeneratorOptions
+  -> FilePath
+  -> FilePath
+  -> m Unit
+writeCodeFromAbi opts abiPath destFile = do
+    ejson <- jsonParser <$> liftAff (readTextFile UTF8 abiPath)
+    json <- either (liftAff <<< throwError <<< error) pure ejson
+    (Abi abiWithErrors) <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
+    abi <- for abiWithErrors case _ of
+      Left (AbiDecodeError err) -> do
+        tell [ABIError { abiPath, error:err.error, idx: err.idx }]
+        pure Nothing
+      Right res -> pure $ Just $ Identity res
+    let 
+      (Tuple code accImports) =
+        runWriter $ genCode (Abi $ catMaybes abi)
+          { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
+    liftAff $ writeTextFile UTF8 destFile
+      $ genPSModuleStatement opts destFile
+      <> "\n" 
+      <> if code == ""
+          then ""
+          else runImports accImports <> "\n" <> code
+
+parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of
   false -> decodeJson abiJson
   true -> let mabi = abiJson ^? _Object <<< ix "abi"

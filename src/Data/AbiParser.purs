@@ -2,24 +2,28 @@ module Data.AbiParser where
 
 import Prelude
 
-import Control.Error.Util (note)
 import Control.Alternative ((<|>))
+import Control.Error.Util (note)
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.?))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
-import Data.Array (fromFoldable, uncons, (:))
+import Data.Array (fromFoldable)
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.EitherR (fmapL)
 import Data.Foldable (foldMap)
+import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic (class Generic, gShow)
 import Data.Int (fromString)
-import Data.List.Types (NonEmptyList(..))
-import Data.Maybe (Maybe(..), maybe)
+import Data.List.Types (List(..), NonEmptyList(..))
+import Data.Maybe (Maybe(..), isJust)
 import Data.NonEmpty ((:|))
+import Data.Record.Extra (showRecord)
 import Data.String (fromCharArray)
+import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
-import Text.Parsing.StringParser.Combinators (lookAhead, choice, manyTill, optionMaybe, many1)
+import Text.Parsing.StringParser.Combinators (choice, lookAhead, many, many1, optionMaybe)
 import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
 
 --------------------------------------------------------------------------------
@@ -62,13 +66,13 @@ instance formatSolidityType :: Format SolidityType where
 parseUint :: Parser SolidityType
 parseUint = do
   _ <- string "uint"
-  n <- numberParser
+  n <- parseDigits >>= asInt
   pure $ SolidityUint n
 
 parseInt :: Parser SolidityType
 parseInt = do
   _ <- string "int"
-  n <- numberParser
+  n <- parseDigits >>= asInt
   pure $ SolidityInt n
 
 parseBool :: Parser SolidityType
@@ -77,18 +81,24 @@ parseBool = string "bool" >>= \_ -> pure SolidityBool
 parseString :: Parser SolidityType
 parseString = string "string" >>= \_ -> pure SolidityString
 
-numberParser :: Parser Int
-numberParser = do
-  n <- fromCharArray <<< fromFoldable <$> many1 anyDigit
-  case fromString n of
-    Nothing -> fail $ "Couldn't parse as Natural : " <> n
+parseDigits :: Parser String
+parseDigits = fromCharArray <<< fromFoldable <$> many1 (try anyDigit)
+
+asInt :: String -> Parser Int
+asInt n = case fromString n of
+    Nothing -> do
+      fail $ "Couldn't parse as Int : " <> n
     Just n' -> pure $ n'
 
 parseBytes :: Parser SolidityType
 parseBytes = do
   _ <- string "bytes"
-  mn <- optionMaybe numberParser
-  pure $ maybe SolidityBytesD SolidityBytesN  mn
+  mns <- optionMaybe parseDigits
+  case mns of
+    Nothing -> pure SolidityBytesD
+    Just ns -> do
+      n <- asInt ns
+      pure $ SolidityBytesN n
 
 
 parseAddress :: Parser SolidityType
@@ -105,31 +115,22 @@ solidityBasicTypeParser =
            , parseAddress
            ]
 
-parseVector :: Parser SolidityType
-parseVector = do
-    s <- solidityBasicTypeParser
-    n <- lengthParser
-    ns <- manyTill lengthParser ((lookAhead $ void (string "[]")) <|> eof)
-    pure $ SolidityVector (NonEmptyList $ n :| ns) s
-  where
-    lengthParser = do
-          _ <- char '['
-          n <- numberParser
-          _ <- char ']'
-          pure n
-
-parseArray :: Parser SolidityType
-parseArray = do
-  s <- (try $ parseVector <* string "[]") <|> (solidityBasicTypeParser <* string "[]")
-  pure $ SolidityArray s
-
+vectoDimentionsParser :: Parser (List Int)
+vectoDimentionsParser = many do
+  shouldFail <- lookAhead (optionMaybe $ void (string "[]") <|> eof)
+  when (isJust shouldFail) $ fail "end"
+  d <- char '[' *> parseDigits
+  asInt d <* char ']'
 
 solidityTypeParser :: Parser SolidityType
-solidityTypeParser =
-    choice [ try parseArray
-           , try parseVector
-           , solidityBasicTypeParser
-           ]
+solidityTypeParser = do
+  t <- solidityBasicTypeParser
+  mbVectorDims <- vectoDimentionsParser
+  let 
+    t' = case mbVectorDims of
+      Nil -> t
+      Cons n ns -> SolidityVector (NonEmptyList $ n :| ns) t
+  (SolidityArray t' <$ string "[]") <|> pure t'
 
 parseSolidityType :: String -> Either String SolidityType
 parseSolidityType s = fmapL show $ runParser solidityTypeParser s
@@ -241,7 +242,7 @@ instance decodeJsonIndexedSolidityValue :: DecodeJson IndexedSolidityValue where
     obj <- decodeJson json
     nm <- obj .? "name"
     ts <- obj .? "type"
-    t <- parseSolidityType ts
+    t <- parseSolidityType ts # lmap \err -> "Failed to parse SolidityType " <> ts <> " : "  <> err
     ixed <- obj .? "indexed"
     pure $ IndexedSolidityValue { name : nm
                                 , type : t
@@ -309,19 +310,26 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       _ -> Left $ "Unkown abi type: " <> t
 
 
-newtype Abi = Abi (Array AbiType)
+newtype Abi f = Abi (Array (f AbiType))
 
-instance decodeJsonAbi :: DecodeJson Abi where
+newtype AbiDecodeError = AbiDecodeError { idx :: Int, error :: String }
+
+type AbiWithErrors = Abi (Either AbiDecodeError)
+
+instance decodeJsonAbi :: DecodeJson (Abi (Either AbiDecodeError)) where
   decodeJson json = do
     arr <- note "Failed to decode ABI as Array type." $ A.toArray json
-    pure $ Abi $ catEithers $ map decodeJson arr
+    pure $ Abi $ mapWithIndex safeDecode arr
+    where 
+    safeDecode idx json = decodeJson json # lmap \error -> AbiDecodeError {idx , error}
+
+instance showAbi ::
+  ( Functor f
+  , Show (f TacitString.TacitString)
+  ) => Show (Abi f) where
+  show (Abi abis) = "(Abi " <> show (map showFAbiType abis) <> ")"
     where
-      catEithers :: forall a b. Array (Either a b) -> Array b
-      catEithers es = case uncons es of
-        Just {head, tail} -> case head of
-          Right b -> b : catEithers tail
-          Left _ -> catEithers tail
-        Nothing -> []
+      showFAbiType = map (show >>> TacitString.hush)
 
-
-derive newtype instance showAbi :: Show Abi
+instance showAbiDecodeError :: Show AbiDecodeError where
+  show (AbiDecodeError r) = "(AbiDecodeError " <> showRecord r <> ")"
