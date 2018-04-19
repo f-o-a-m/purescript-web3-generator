@@ -2,7 +2,7 @@ module Data.GeneratorMain where
 
 import Prelude
 
-import Control.Monad.Aff (Aff, launchAff_, liftEff')
+import Control.Monad.Aff (launchAff_)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (EXCEPTION)

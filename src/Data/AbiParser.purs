@@ -11,7 +11,6 @@ import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Array (fromFoldable)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.EitherR (fmapL)
 import Data.Foldable (foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic (class Generic, gShow)
@@ -117,10 +116,9 @@ solidityBasicTypeParser =
 
 vectoDimentionsParser :: Parser (List Int)
 vectoDimentionsParser = many do
-  shouldFail <- lookAhead (optionMaybe $ void (string "[]") <|> eof)
+  shouldFail <- lookAhead $ optionMaybe $ void (string "[]") <|> eof
   when (isJust shouldFail) $ fail "end"
-  d <- char '[' *> parseDigits
-  asInt d <* char ']'
+  char '[' *> (parseDigits >>= asInt) <* char ']'
 
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
@@ -133,15 +131,14 @@ solidityTypeParser = do
   (SolidityArray t' <$ string "[]") <|> pure t'
 
 parseSolidityType :: String -> Either String SolidityType
-parseSolidityType s = fmapL show $ runParser solidityTypeParser s
+parseSolidityType s = runParser (solidityTypeParser <* eof) s # lmap \err ->
+  "Failed to parse SolidityType " <> show s <> " with error: " <> show err
 
 instance decodeJsonSolidityType :: DecodeJson SolidityType where
   decodeJson json = do
     obj <- decodeJson json
     t <- obj .? "type"
-    case parseSolidityType t of
-      Left err -> Left $ "Failed to parse SolidityType " <> t <> " : "  <> err
-      Right typ -> Right typ
+    parseSolidityType t
 
 --------------------------------------------------------------------------------
 -- | Solidity Function Parser
@@ -165,9 +162,8 @@ instance decodeFunctionInput :: DecodeJson FunctionInput where
     obj <- decodeJson json
     n <- obj .? "name"
     t <- obj .? "type"
-    case parseSolidityType t of
-      Left err -> Left $ "Failed to parse SolidityType " <> t <> " : "  <> err
-      Right typ -> Right $ FunctionInput {type: typ, name: n}
+    typ <- parseSolidityType t
+    pure $ FunctionInput {type: typ, name: n}
 
 data SolidityFunction =
   SolidityFunction { name :: String
@@ -242,7 +238,7 @@ instance decodeJsonIndexedSolidityValue :: DecodeJson IndexedSolidityValue where
     obj <- decodeJson json
     nm <- obj .? "name"
     ts <- obj .? "type"
-    t <- parseSolidityType ts # lmap \err -> "Failed to parse SolidityType " <> ts <> " : "  <> err
+    t <- parseSolidityType ts
     ixed <- obj .? "indexed"
     pure $ IndexedSolidityValue { name : nm
                                 , type : t
