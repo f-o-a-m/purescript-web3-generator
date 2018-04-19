@@ -6,9 +6,11 @@ import Control.Monad.Writer (Writer, tell)
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, unsnoc, zip, zipWith, (:))
 import Data.Foldable (all, fold)
+import Data.Identity (Identity(..))
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..))
+import Data.Newtype (un)
 import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
 import Data.Traversable (for, traverse)
@@ -611,9 +613,9 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
         , genericInstCode
         ]
 
-instance codeAbi :: Code Abi where
+instance codeAbi :: Code (Abi Identity) where
   genCode (Abi abi) opts = do
-    codes <- for abi case _ of
+    codes <- for abi $ un Identity >>> case _ of
       AbiFunction f -> do
         functionCodeBlock <- funToFunctionCodeBlock f opts
         genCode functionCodeBlock opts
