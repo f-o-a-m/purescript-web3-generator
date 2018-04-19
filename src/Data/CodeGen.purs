@@ -20,7 +20,7 @@ import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, length, nub, null, sort)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
-import Data.Generator (ModuleName, Imports, ModuleImports, ModuleImport(..), genCode, newLine1, mkComment)
+import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
@@ -48,6 +48,15 @@ type GeneratorOptions =
 
 data IsCtrInImports = CtrIsInImports | CtrIsNotInImports
 type ModuleImportsAcc = { types :: Map ModuleName IsCtrInImports, imports :: Array String }
+
+runImported :: GeneratorOptions -> FilePath -> Imported String -> String
+runImported opts destFile c =
+  let (Tuple code accImports) = runWriter c
+  in
+    genPSModuleStatement opts destFile
+      <> if code == ""
+        then ""
+        else "\n" <> runImports accImports <> "\n" <> code
 
 runImports :: Imports -> String
 runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n\n" <> _)
@@ -139,19 +148,13 @@ writeCodeFromAbi opts abiPath destFile = do
     (Abi abiWithErrors) <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
     abi <- for abiWithErrors case _ of
       Left (AbiDecodeError err) -> do
-        tell [ABIError { abiPath, error:err.error, idx: err.idx }]
+        tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
       Right res -> pure $ Just $ Identity res
-    let 
-      (Tuple code accImports) =
-        runWriter $ genCode (Abi $ catMaybes abi)
-          { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
-    liftAff $ writeTextFile UTF8 destFile
-      $ genPSModuleStatement opts destFile
-      <> "\n" 
-      <> if code == ""
-          then ""
-          else runImports accImports <> "\n" <> code
+    genCode (Abi $ catMaybes abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
+      # runImported opts destFile
+      # writeTextFile UTF8 destFile
+      # liftAff
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of
