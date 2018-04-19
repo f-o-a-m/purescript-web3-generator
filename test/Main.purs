@@ -6,11 +6,11 @@ import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Data.AbiParser (AbiWithErrors)
+import Data.AbiParser (AbiWithErrors, SolidityType(..), parseSolidityType)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (null)
 import Data.CodeGen (generatePS, parseAbi)
-import Data.Either (Either, either, isRight)
+import Data.Either (Either(..), either, isRight)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile)
 import Test.Spec (Spec, describe, it)
@@ -25,6 +25,17 @@ main = run [consoleReporter] $ do
 simpleStorageParserSpec :: forall r . Spec (fs :: FS, console :: CONSOLE | r) Unit
 simpleStorageParserSpec =
   describe "simple storage parser spec" do
+    it "can parse solidity types" do
+      parseSolidityType "bytes32[2147483647][12][]" `shouldEqual`
+        Right (SolidityArray $ SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
+      parseSolidityType "bytes32[1asd][]" `shouldEqual`
+        Left "Failed to parse SolidityType \"bytes32[1asd][]\" with error: Could not match character ']'"
+      parseSolidityType "bytes32[21474836471][12][]" `shouldEqual`
+        Left "Failed to parse SolidityType \"bytes32[21474836471][12][]\" with error: Couldn't parse as Int : 21474836471"
+      parseSolidityType "bytes999[]" `shouldEqual`
+        Right (SolidityArray $ SolidityBytesN 999)
+      parseSolidityType "bytes32[] " `shouldEqual`
+        Left "Failed to parse SolidityType \"bytes32[] \" with error: Expected EOF"
 
     it "can parse the simple storage abi" do
       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"

@@ -13,16 +13,16 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Generic (class Generic, gShow)
+import Data.Generic (class Generic, gEq, gShow)
 import Data.Int (fromString)
 import Data.List.Types (List(..), NonEmptyList(..))
-import Data.Maybe (Maybe(..), isJust)
+import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
 import Data.Record.Extra (showRecord)
 import Data.String (fromCharArray)
 import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
-import Text.Parsing.StringParser.Combinators (choice, lookAhead, many, many1, optionMaybe)
+import Text.Parsing.StringParser.Combinators (choice, lookAhead, manyTill, many1, optionMaybe)
 import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
 
 --------------------------------------------------------------------------------
@@ -49,6 +49,9 @@ derive instance genericSolidityType :: Generic SolidityType
 
 instance showSolidityType :: Show SolidityType where
   show = gShow
+
+instance eqSolidityType :: Eq SolidityType where
+  eq = gEq
 
 instance formatSolidityType :: Format SolidityType where
   format s = case s of
@@ -115,10 +118,9 @@ solidityBasicTypeParser =
            ]
 
 vectoDimentionsParser :: Parser (List Int)
-vectoDimentionsParser = many do
-  shouldFail <- lookAhead $ optionMaybe $ void (string "[]") <|> eof
-  when (isJust shouldFail) $ fail "end"
-  char '[' *> (parseDigits >>= asInt) <* char ']'
+vectoDimentionsParser = manyTill
+  (char '[' *> (parseDigits >>= asInt) <* char ']')
+  (lookAhead $ void (string "[]") <|> eof)
 
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
