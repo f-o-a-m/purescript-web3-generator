@@ -28,7 +28,7 @@
     "purescript-node-fs-aff": "^5.0.0",
     "purescript-console": "^3.0.0",
     "purescript-string-parsers": "^3.0.1",
-    "purescript-web3": "^0.22.0",
+    "purescript-web3": "f-o-a-m/purescript-web3#transformers",
     "purescript-mkdirp": "^0.3.0",
     "purescript-fixed-points": "^4.0.0",
     "purescript-record-extra": "^0.3.0"
