@@ -159,8 +159,7 @@ writeCodeFromAbi opts abiPath destFile = do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
       Right res -> pure $ Just $ Identity res
-    let abi = Abi $ map Identity $ maybeAnnotateArity $ un Identity <$> catMaybes abiUnAnn
-        code = generateCodeFromAbi opts abi destFile
+    let code = generateCodeFromAbi opts (Abi $ catMaybes abiUnAnn) destFile
     liftAff $ writeTextFile UTF8 destFile code
 
 maybeAnnotateArity :: Array AbiType -> Array AbiType
