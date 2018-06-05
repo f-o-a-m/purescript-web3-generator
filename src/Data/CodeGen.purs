@@ -152,7 +152,7 @@ writeCodeFromAbi opts abiPath destFile = do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
       Right res -> pure $ Just $ Identity $ res
-    let abi = map Identity $ maybeAnnotateArity $ map (\(Identity a) -> a) $ catMaybes (abiUnAnn)
+    let abi = map Identity $ maybeAnnotateArity $ map (\(Identity a) -> a) $ catMaybes abiUnAnn
     genCode (Abi $ abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
       # runImported opts destFile
       # writeTextFile UTF8 destFile
