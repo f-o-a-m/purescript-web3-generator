@@ -13,11 +13,11 @@ import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
-import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors)
+import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (catMaybes, concat, length, nub, null, sort)
+import Data.Array (catMaybes, concat, foldMap, length, nub, null, sort)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
 import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
@@ -27,7 +27,9 @@ import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
+import Data.Newtype (un)
 import Data.Record.Extra (showRecord)
+import Data.StrMap as StrMap
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
@@ -146,15 +148,32 @@ writeCodeFromAbi opts abiPath destFile = do
     ejson <- jsonParser <$> liftAff (readTextFile UTF8 abiPath)
     json <- either (liftAff <<< throwError <<< error) pure ejson
     (Abi abiWithErrors) <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
-    abi <- for abiWithErrors case _ of
+    abiUnAnn <- for abiWithErrors case _ of
       Left (AbiDecodeError err) -> do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
       Right res -> pure $ Just $ Identity res
-    genCode (Abi $ catMaybes abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
+    let abi = map Identity $ maybeAnnotateArity $ un Identity <$> catMaybes abiUnAnn
+    genCode (Abi $ abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
       # runImported opts destFile
       # writeTextFile UTF8 destFile
       # liftAff
+
+maybeAnnotateArity :: Array AbiType -> Array AbiType
+maybeAnnotateArity abi =
+  let
+    Tuple nonFuncAbi funcAbi = foldMap groupingFunc abi
+    nameToFunctions = StrMap.fromFoldableWith (<>) $ funcAbi <#> \fun@(SolidityFunction f) -> Tuple f.name [fun]
+    functionsWithArity = StrMap.values nameToFunctions >>= \fs -> if length fs > 1 then map go fs else fs
+  in
+    nonFuncAbi <> map AbiFunction functionsWithArity
+  where
+    groupingFunc :: AbiType -> Tuple (Array AbiType) (Array SolidityFunction)
+    groupingFunc (AbiFunction f) = Tuple [] [f]
+    groupingFunc a = Tuple [a] []
+
+    go :: SolidityFunction -> SolidityFunction
+    go (SolidityFunction f) = SolidityFunction f {name = f.name <> show (length f.inputs)}
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of

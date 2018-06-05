@@ -318,7 +318,7 @@ instance decodeJsonAbi :: DecodeJson (Abi (Either AbiDecodeError)) where
   decodeJson json = do
     arr <- note "Failed to decode ABI as Array type." $ A.toArray json
     pure $ Abi $ mapWithIndex safeDecode arr
-    where 
+    where
     safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError {idx , error}
 
 instance showAbi ::
