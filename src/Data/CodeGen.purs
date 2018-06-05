@@ -11,9 +11,9 @@ import Control.Monad.Aff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
+import Control.Monad.State (class MonadState, StateT, State, evalStateT, evalState, get, put, modify)
 import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
-import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors)
+import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
@@ -29,7 +29,8 @@ import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
 import Data.Record.Extra (showRecord)
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
-import Data.Traversable (for)
+import Data.Set as S
+import Data.Traversable (for, traverse)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, stat)
@@ -146,15 +147,27 @@ writeCodeFromAbi opts abiPath destFile = do
     ejson <- jsonParser <$> liftAff (readTextFile UTF8 abiPath)
     json <- either (liftAff <<< throwError <<< error) pure ejson
     (Abi abiWithErrors) <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
-    abi <- for abiWithErrors case _ of
+    abiUnAnn <- for abiWithErrors case _ of
       Left (AbiDecodeError err) -> do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
-      Right res -> pure $ Just $ Identity res
-    genCode (Abi $ catMaybes abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
+      Right res -> pure $ Just $ Identity $ res
+    let abi = map Identity $ maybeAnnotateArity $ map (\(Identity a) -> a) $ catMaybes (abiUnAnn)
+    genCode (Abi $ abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
       # runImported opts destFile
       # writeTextFile UTF8 destFile
       # liftAff
+
+maybeAnnotateArity :: Array AbiType -> Array AbiType
+maybeAnnotateArity abi = evalState (traverse go abi) S.empty
+  where
+    go :: AbiType -> State (S.Set String) AbiType
+    go fun@(AbiFunction (SolidityFunction f)) = do
+      st <- get
+      if f.name `S.member` st
+         then pure $ AbiFunction $ SolidityFunction f {name = f.name <> show (length f.inputs)}
+         else modify (S.insert f.name) *> pure fun
+    go a = pure a
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of
