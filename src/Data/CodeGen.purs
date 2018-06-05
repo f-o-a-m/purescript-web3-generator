@@ -11,13 +11,13 @@ import Control.Monad.Aff.Console (CONSOLE, log)
 import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.State (class MonadState, StateT, State, evalStateT, evalState, get, put, modify)
+import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
 import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
-import Data.Array (catMaybes, concat, length, nub, null, sort)
+import Data.Array (catMaybes, concat, foldMap, length, nub, null, sort)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
 import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
@@ -27,10 +27,11 @@ import Data.Lens.Index (ix)
 import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Monoid (mempty)
+import Data.Newtype (un)
 import Data.Record.Extra (showRecord)
+import Data.StrMap as StrMap
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
-import Data.Set as S
-import Data.Traversable (for, traverse)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, stat)
@@ -151,23 +152,28 @@ writeCodeFromAbi opts abiPath destFile = do
       Left (AbiDecodeError err) -> do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
-      Right res -> pure $ Just $ Identity $ res
-    let abi = map Identity $ maybeAnnotateArity $ map (\(Identity a) -> a) $ catMaybes abiUnAnn
+      Right res -> pure $ Just $ Identity res
+    let abi = map Identity $ maybeAnnotateArity $ un Identity <$> catMaybes abiUnAnn
     genCode (Abi $ abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
       # runImported opts destFile
       # writeTextFile UTF8 destFile
       # liftAff
 
 maybeAnnotateArity :: Array AbiType -> Array AbiType
-maybeAnnotateArity abi = evalState (traverse go abi) S.empty
+maybeAnnotateArity abi =
+  let
+    Tuple nonFuncAbi funcAbi = foldMap groupingFunc abi
+    nameToFunctions = StrMap.fromFoldableWith (<>) $ funcAbi <#> \fun@(SolidityFunction f) -> Tuple f.name [fun]
+    functionsWithArity = StrMap.values nameToFunctions >>= \fs -> if length fs > 1 then map go fs else fs
+  in
+    nonFuncAbi <> map AbiFunction functionsWithArity
   where
-    go :: AbiType -> State (S.Set String) AbiType
-    go fun@(AbiFunction (SolidityFunction f)) = do
-      st <- get
-      if f.name `S.member` st
-         then pure $ AbiFunction $ SolidityFunction f {name = f.name <> show (length f.inputs)}
-         else modify (S.insert f.name) *> pure fun
-    go a = pure a
+    groupingFunc :: AbiType -> Tuple (Array AbiType) (Array SolidityFunction)
+    groupingFunc (AbiFunction f) = Tuple [] [f]
+    groupingFunc a = Tuple [a] []
+
+    go :: SolidityFunction -> SolidityFunction
+    go (SolidityFunction f) = SolidityFunction f {name = f.name <> show (length f.inputs)}
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of
