@@ -146,8 +146,7 @@ data FunTypeDecl =
 
 funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) opts = do
-  factorTypes <- for f.inputs $ \(FunctionInput fi) ->
-    toPSType $ fi.type
+  factorTypes <- for f.inputs tagInput
   pure $
     FunTypeDecl
       { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
@@ -232,7 +231,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   helperTransport <- toTransportPrefix f.isConstructor f.constant $ length f.outputs
   helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
-  ins <- for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
+  ins <- for f.inputs tagInput
   pure
     { signature: sigPrefix <> ins <> [returnType]
     , unpackExpr:
@@ -292,11 +291,6 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         , whereClause: whereC
         }
   where
-    tagInput (FunctionInput fi) = do
-      ty <- toPSType fi.type
-      import' "Data.Functor.Tagged" [IType "Tagged"]
-      import' "Data.Symbol" [IType "SProxy"]
-      pure $ "Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty
     recordInput fis = do
       rowElems <- for fis $ \(FunctionInput fi) -> do
         ty <- toPSType fi.type
@@ -311,6 +305,15 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         , unpackExpr = helper.unpackExpr {name = helper.unpackExpr.name <> "'"}
         , signature = pre <> tys <> [ret]
         }
+
+tagInput
+  :: FunctionInput
+  -> Imported String
+tagInput (FunctionInput fi) = do
+  ty <- toPSType fi.type
+  import' "Data.Functor.Tagged" [IType "Tagged"]
+  import' "Data.Symbol" [IType "SProxy"]
+  pure $ "(Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
 
 toTransportPrefix :: Boolean -> Boolean -> Int -> Imported String
 toTransportPrefix isConstructor isCall outputCount = do
@@ -340,13 +343,7 @@ toPayload isWhereClause typeName args = do
   import' "Data.Functor.Tagged" [IVal "tagged"]
   let tupleType = "Tuple" <> show (length args)
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
-  args' <- if isWhereClause
-            then do
-              import' "Data.Functor.Tagged" [IVal "untagged"]
-              pure $ map (\s -> "(untagged " <> s <> " )") args
-            else pure args
-
-  pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args' <> ") :: " <> typeName <> ")"
+  pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
 
 toReturnType :: Boolean -> Array SolidityType -> Imported String
 toReturnType constant outputs' = do
