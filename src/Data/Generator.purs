@@ -213,8 +213,8 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
           pure ["TransactionOptions NoPay", "ChainCursor"]
         else if f.payable
                then do
-                   import' "Network.Ethereum.Web3.Types" [IType "Wei"]
-                   pure ["TransactionOptions Wei"]
+                   import' "Network.Ethereum.Web3.Types.TokenUnit" [IType "MinorUnit"]
+                   pure ["TransactionOptions MinorUnit"]
                else do
                    import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
                    pure ["TransactionOptions NoPay"]
@@ -268,8 +268,8 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
             pure ["TransactionOptions NoPay", "ChainCursor"]
           else if f.payable
                then do
-                 import' "Network.Ethereum.Web3.Types" [IType "Wei"]
-                 pure ["TransactionOptions Wei"]
+                 import' "Network.Ethereum.Web3.Types.TokenUnit" [IType "MinorUnit"]
+                 pure ["TransactionOptions MinorUnit"]
                else do
                  import' "Network.Ethereum.Web3.Types" [IType "NoPay"]
                  pure ["TransactionOptions NoPay"]
