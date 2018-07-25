@@ -5,7 +5,7 @@ import Prelude
 import Control.Monad.Writer (Writer, tell)
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, unsnoc, zip, zipWith, (:))
-import Data.Foldable (all, fold)
+import Data.Foldable (fold)
 import Data.Identity (Identity(..))
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
@@ -13,7 +13,7 @@ import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.NonEmpty ((:|))
 import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
-import Data.Traversable (for, traverse)
+import Data.Traversable (for)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
@@ -146,7 +146,10 @@ data FunTypeDecl =
 
 funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) opts = do
-  factorTypes <- for f.inputs tagInput
+  factorTypes <-
+    if f.isUnCurried
+      then for f.inputs tagInput
+      else for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
   pure $
     FunTypeDecl
       { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
@@ -231,7 +234,10 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   helperTransport <- toTransportPrefix f.isConstructor f.constant $ length f.outputs
   helperPayload <- toPayload isWhereClause decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
-  ins <- for f.inputs tagInput
+  ins <-
+    if f.isUnCurried
+      then for f.inputs tagInput
+      else for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
   pure
     { signature: sigPrefix <> ins <> [returnType]
     , unpackExpr:
@@ -298,7 +304,10 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
       pure $ "{ " <> joinWith ", " rowElems <> " }"
     whereHelper d pre is ret = do
       helper <- funToHelperFunction true fun opts
-      tys <- traverse tagInput is
+      tys <-
+        if f.isUnCurried
+          then for f.inputs tagInput
+          else for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
       pure $ CurriedHelperFunction helper
         { constraints = []
         , quantifiedVars = []
@@ -570,13 +579,11 @@ data CodeBlock =
 
 funToFunctionCodeBlock :: SolidityFunction -> CodeOptions -> Imported CodeBlock
 funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
-    typeDecl <- funToTypeDecl fun opts
-    helperFunction <- if isUnCurried f
-                        then funToHelperFunction' fun opts
-                        else funToHelperFunction false fun opts <#> CurriedHelperFunction
-    pure $ FunctionCodeBlock typeDecl helperFunction
-  where
-    isUnCurried f' = all (\(FunctionInput fi) -> fi.name /= "") f'.inputs && not (null f'.inputs)
+  typeDecl <- funToTypeDecl fun opts
+  helperFunction <- if f.isUnCurried
+                      then funToHelperFunction' fun opts
+                      else funToHelperFunction false fun opts <#> CurriedHelperFunction
+  pure $ FunctionCodeBlock typeDecl helperFunction
 
 newLine1 :: Array String -> String
 newLine1 = joinWith "\n"
@@ -626,6 +633,7 @@ instance codeAbi :: Code (Abi Identity) where
                                  , constant : false
                                  , payable : false
                                  , isConstructor : true
+                                 , isUnCurried: c.isUnCurried
                                  }
         functionCodeBlock <- funToFunctionCodeBlock f opts
         genCode functionCodeBlock opts

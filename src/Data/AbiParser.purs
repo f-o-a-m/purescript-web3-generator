@@ -8,10 +8,10 @@ import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.?))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
-import Data.Array (fromFoldable)
+import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (foldMap)
+import Data.Foldable (all, foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic (class Generic, gEq, gShow)
 import Data.Int (fromString)
@@ -174,6 +174,7 @@ data SolidityFunction =
                    , constant :: Boolean
                    , payable :: Boolean
                    , isConstructor :: Boolean
+                   , isUnCurried :: Boolean
                    }
 
 derive instance genericSolidityFunction :: Generic SolidityFunction
@@ -195,6 +196,8 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
                             , constant : c
                             , payable: p
                             , isConstructor: false
+                            , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
+                                             && not (null is)
                             }
 
 --------------------------------------------------------------------------------
@@ -203,6 +206,7 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
 
 data SolidityConstructor =
   SolidityConstructor { inputs :: Array FunctionInput
+                      , isUnCurried :: Boolean
                       }
 
 derive instance genericSolidityConstructor :: Generic SolidityConstructor
@@ -215,6 +219,8 @@ instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
     obj <- decodeJson json
     is <- obj .? "inputs"
     pure $ SolidityConstructor { inputs : is
+                               , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
+                                   && not (null is)
                                }
 
 --------------------------------------------------------------------------------
