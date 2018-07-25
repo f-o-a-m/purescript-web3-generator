@@ -136,6 +136,12 @@ newtype ABIError = ABIError { abiPath :: FilePath, idx :: Int, error :: String }
 instance showABIError :: Show ABIError where
   show (ABIError r) = "(ABIError " <> showRecord r <> ")"
 
+generateCodeFromAbi :: GeneratorOptions -> Abi Identity -> FilePath -> String
+generateCodeFromAbi opts (Abi abi) destFile =
+  let abi' = map Identity $ maybeAnnotateArity $ un Identity <$> abi
+  in genCode (Abi $ abi') { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
+       # runImported opts destFile
+
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall e m
   . MonadAff (fs :: FS, console :: CONSOLE | e) m
@@ -153,11 +159,8 @@ writeCodeFromAbi opts abiPath destFile = do
         tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
         pure Nothing
       Right res -> pure $ Just $ Identity res
-    let abi = map Identity $ maybeAnnotateArity $ un Identity <$> catMaybes abiUnAnn
-    genCode (Abi $ abi) { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
-      # runImported opts destFile
-      # writeTextFile UTF8 destFile
-      # liftAff
+    let code = generateCodeFromAbi opts (Abi $ catMaybes abiUnAnn) destFile
+    liftAff $ writeTextFile UTF8 destFile code
 
 maybeAnnotateArity :: Array AbiType -> Array AbiType
 maybeAnnotateArity abi =
