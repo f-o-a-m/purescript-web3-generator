@@ -2,9 +2,8 @@ module Test.Main where
 
 import Prelude
 
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE)
-import Control.Monad.Eff.Exception (error)
+import Effect ( Effect)
+import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Data.AbiParser (AbiWithErrors, SolidityType(..), parseSolidityType)
 import Data.Argonaut.Parser (jsonParser)
@@ -12,17 +11,17 @@ import Data.Array (null)
 import Data.CodeGen (generatePS, parseAbi)
 import Data.Either (Either(..), either, isRight)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile)
+import Node.FS.Aff (readTextFile)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner (RunnerEffects, run)
+import Test.Spec.Runner (run)
 
-main :: Eff (RunnerEffects (fs :: FS, console :: CONSOLE )) Unit
+main :: Effect Unit
 main = run [consoleReporter] $ do
   simpleStorageParserSpec
 
-simpleStorageParserSpec :: forall r . Spec (fs :: FS, console :: CONSOLE | r) Unit
+simpleStorageParserSpec :: Spec Unit
 simpleStorageParserSpec =
   describe "simple storage parser spec" do
     it "can parse solidity types" do
