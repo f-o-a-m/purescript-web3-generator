@@ -13,13 +13,14 @@ import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
 import Data.Foldable (all, foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
-import Data.Generic (class Generic, gEq, gShow)
+import Data.Generic.Rep (class Generic)
+import Data.Generic.Rep.Eq (genericEq)
+import Data.Generic.Rep.Show (genericShow)
 import Data.Int (fromString)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
-import Data.Record.Extra (showRecord)
-import Data.String (fromCharArray)
+import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
 import Text.Parsing.StringParser.Combinators (choice, lookAhead, manyTill, many1, optionMaybe)
@@ -45,13 +46,13 @@ data SolidityType =
   | SolidityVector (NonEmptyList Int) SolidityType
   | SolidityArray SolidityType
 
-derive instance genericSolidityType :: Generic SolidityType
+derive instance genericSolidityType :: Generic SolidityType _
 
 instance showSolidityType :: Show SolidityType where
-  show = gShow
+  show x = genericShow x
 
 instance eqSolidityType :: Eq SolidityType where
-  eq = gEq
+  eq x = genericEq x
 
 instance formatSolidityType :: Format SolidityType where
   format s = case s of
@@ -151,10 +152,10 @@ newtype FunctionInput =
                 , type :: SolidityType
                 }
 
-derive instance genericFunctionInput :: Generic FunctionInput
+derive instance genericFunctionInput :: Generic FunctionInput _
 
 instance showFunctionInput :: Show FunctionInput where
-  show = gShow
+  show = genericShow
 
 instance formatInput :: Format FunctionInput where
   format (FunctionInput fi) = format fi.type
@@ -177,10 +178,10 @@ data SolidityFunction =
                    , isUnCurried :: Boolean
                    }
 
-derive instance genericSolidityFunction :: Generic SolidityFunction
+derive instance genericSolidityFunction :: Generic SolidityFunction _
 
 instance showSolidityFunction :: Show SolidityFunction where
-  show = gShow
+  show = genericShow
 
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
@@ -209,10 +210,10 @@ data SolidityConstructor =
                       , isUnCurried :: Boolean
                       }
 
-derive instance genericSolidityConstructor :: Generic SolidityConstructor
+derive instance genericSolidityConstructor :: Generic SolidityConstructor _
 
 instance showSolidityConstructor :: Show SolidityConstructor where
-  show = gShow
+  show = genericShow
 
 instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
   decodeJson json = do
@@ -233,10 +234,10 @@ data IndexedSolidityValue =
                        , indexed :: Boolean
                        }
 
-derive instance genericSolidityIndexedValue :: Generic IndexedSolidityValue
+derive instance genericSolidityIndexedValue :: Generic IndexedSolidityValue _
 
 instance showSolidityIndexedValue :: Show IndexedSolidityValue where
-  show = gShow
+  show = genericShow
 
 instance formatIndexedSolidityValue :: Format IndexedSolidityValue where
   format (IndexedSolidityValue v) = format v.type
@@ -259,10 +260,10 @@ data SolidityEvent =
                 , inputs :: Array IndexedSolidityValue
                 }
 
-derive instance genericSolidityEvent :: Generic SolidityEvent
+derive instance genericSolidityEvent :: Generic SolidityEvent _
 
 instance showSolidityEvent :: Show SolidityEvent where
-  show = gShow
+  show = genericShow
 
 instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
   decodeJson json = do
@@ -277,10 +278,10 @@ instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
 
 data SolidityFallback = SolidityFallback
 
-derive instance genericSolidityFallback :: Generic SolidityFallback
+derive instance genericSolidityFallback :: Generic SolidityFallback _
 
 instance showSolidityFallback :: Show SolidityFallback where
-  show = gShow
+  show = genericShow
 
 instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
   decodeJson json = do
@@ -296,10 +297,10 @@ data AbiType =
   | AbiEvent SolidityEvent
   | AbiFallback SolidityFallback
 
-derive instance genericAbiType :: Generic AbiType
+derive instance genericAbiType :: Generic AbiType _
 
 instance showAbiType :: Show AbiType where
-  show = gShow
+  show = genericShow
 
 instance decodeJsonAbiType :: DecodeJson AbiType where
   decodeJson json = do
@@ -336,4 +337,4 @@ instance showAbi ::
       showFAbiType = map (show >>> TacitString.hush)
 
 instance showAbiDecodeError :: Show AbiDecodeError where
-  show (AbiDecodeError r) = "(AbiDecodeError " <> showRecord r <> ")"
+  show (AbiDecodeError r) = "(AbiDecodeError " <> show r <> ")"

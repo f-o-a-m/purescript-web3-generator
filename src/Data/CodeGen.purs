@@ -5,11 +5,11 @@ import Prelude
 import Ansi.Codes (Color(..))
 import Ansi.Output (withGraphics, foreground)
 import Control.Error.Util (note)
-import Control.Monad.Aff (Aff, try)
-import Control.Monad.Aff.Class (class MonadAff, liftAff)
-import Control.Monad.Aff.Console (CONSOLE, log)
-import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Exception (error)
+import Effect.Aff (Aff, try)
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Console (log)
+import Effect.Class (liftEffect)
+import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
@@ -23,18 +23,17 @@ import Data.Foldable (foldl, for_)
 import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
+import Data.Array as Array
 import Data.Lens.Index (ix)
-import Data.Map (Map, fromFoldableWith, insert, lookup, member, toAscUnfoldable)
+import Data.Map (Map, fromFoldableWith, insert, lookup, member, toUnfoldable)
 import Data.Maybe (Maybe(..), isNothing)
-import Data.Monoid (mempty)
 import Data.Newtype (un)
-import Data.Record.Extra (showRecord)
-import Data.StrMap as StrMap
+import Data.Map as Map
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (FS, readTextFile, writeTextFile, readdir, stat)
+import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
 import Node.FS.Stats as Stats
 import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
@@ -70,7 +69,7 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
       runAcc <<< foldl f { types: mempty, imports: mempty }
       where
       runAcc :: ModuleImportsAcc -> Array String
-      runAcc acc = sort $ nub $ append acc.imports $ (toAscUnfoldable acc.types) >>= resolveCtrImports
+      runAcc acc = sort $ nub $ append acc.imports $ (toUnfoldable acc.types) >>= resolveCtrImports
       resolveCtrImports :: Tuple String IsCtrInImports -> Array String
       resolveCtrImports (Tuple typeName isCtrInImports) = case isCtrInImports of
         CtrIsInImports -> []
@@ -98,29 +97,29 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
         IOp a ->
           acc {imports = acc.imports <> [ "(" <> a <> ")" ]}
 
-    -- NOTE this also sorts modules as we use toAscUnfoldable
+    -- NOTE this also sorts modules as we use toUnfoldable which returns ascending order result
     mergeImports :: Imports -> Imports
-    mergeImports = fromFoldableWith append >>> toAscUnfoldable
+    mergeImports = fromFoldableWith append >>> toUnfoldable
 
-generatePS :: forall e . GeneratorOptions -> Aff (fs :: FS, console :: CONSOLE | e) ABIErrors
+generatePS :: GeneratorOptions -> Aff ABIErrors
 generatePS os = do
   let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
   fs <- getAllJsonFiles opts.jsonDir
-  liftEff $ mkdirp opts.pursDir
+  liftEffect $ mkdirp opts.pursDir
   case fs of
     [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> do
       errs <- join <$> for fs' \f -> do
         let f' = genPSFileName opts f
         Tuple _ errs <- runWriterT $ writeCodeFromAbi opts f f'
-        log if null errs
+        liftEffect $ log if null errs
           then successCheck <> " contract module for " <> f <> " successfully written to " <> f'
           else warningCheck <> " (" <> show (length errs) <> ") contract module for " <> f <> " written to " <> f'
         pure errs
       unless (null errs) do
-        log $ errorCheck <> " got " <> show (length errs) <> " error(s) during generation"
+        liftEffect $ log $ errorCheck <> " got " <> show (length errs) <> " error(s) during generation"
         for_ errs \(ABIError err) ->
-          log $ errorCheck <> " while parsing abi type of object at index: " <> show err.idx <> " from: " <> err.abiPath <> " got error:\n    " <> err.error
+          liftEffect $ log $ errorCheck <> " while parsing abi type of object at index: " <> show err.idx <> " from: " <> err.abiPath <> " got error:\n    " <> err.error
       pure errs
   where
     successCheck = withGraphics (foreground Green) $ "✔"
@@ -134,7 +133,7 @@ type ABIErrors = Array ABIError
 newtype ABIError = ABIError { abiPath :: FilePath, idx :: Int, error :: String }
 
 instance showABIError :: Show ABIError where
-  show (ABIError r) = "(ABIError " <> showRecord r <> ")"
+  show (ABIError r) = "(ABIError " <> show r <> ")"
 
 generateCodeFromAbi :: GeneratorOptions -> Abi Identity -> FilePath -> String
 generateCodeFromAbi opts (Abi abi) destFile =
@@ -143,8 +142,8 @@ generateCodeFromAbi opts (Abi abi) destFile =
        # runImported opts destFile
 
 -- | read in json abi and write the generated code to a destination file
-writeCodeFromAbi :: forall e m
-  . MonadAff (fs :: FS, console :: CONSOLE | e) m
+writeCodeFromAbi :: forall m
+  . MonadAff m
   => MonadTell ABIErrors m
   => GeneratorOptions
   -> FilePath
@@ -166,8 +165,8 @@ maybeAnnotateArity :: Array AbiType -> Array AbiType
 maybeAnnotateArity abi =
   let
     Tuple nonFuncAbi funcAbi = foldMap groupingFunc abi
-    nameToFunctions = StrMap.fromFoldableWith (<>) $ funcAbi <#> \fun@(SolidityFunction f) -> Tuple f.name [fun]
-    functionsWithArity = StrMap.values nameToFunctions >>= \fs -> if length fs > 1 then map go fs else fs
+    nameToFunctions = Map.fromFoldableWith (<>) $ funcAbi <#> \fun@(SolidityFunction f) -> Tuple f.name [fun]
+    functionsWithArity = Array.fromFoldable (Map.values nameToFunctions) >>= \fs -> if length fs > 1 then map go fs else fs
   in
     nonFuncAbi <> map AbiFunction functionsWithArity
   where
@@ -199,8 +198,8 @@ genPSModuleStatement opts fp = comment <> "\n"
 
 -- get all the "valid" directories rooted in a filepath
 getAllDirectories
-  :: forall eff m.
-     MonadAff (fs :: FS | eff) m
+  :: forall m.
+     MonadAff m
   => MonadState FilePath m
   => m (Array FilePath)
 getAllDirectories = do
@@ -211,8 +210,8 @@ getAllDirectories = do
 
 -- determine whether or not a directory is valid (basically it's not dotted)
 validateRootedDir
-  :: forall eff m.
-     MonadAff (fs :: FS | eff) m
+  :: forall m.
+     MonadAff m
   => FilePath -- prefix
   -> FilePath -- dirname
   -> m (Maybe FilePath)
@@ -229,8 +228,8 @@ validateRootedDir prefix dir = liftAff $ do
 
 -- | get all files in a directory with a ".json" extension
 getJsonFilesInDirectory
-  :: forall eff m.
-     MonadAff (fs :: FS | eff) m
+  :: forall m.
+     MonadAff m
   => MonadState FilePath m
   => m (Array FilePath)
 getJsonFilesInDirectory = do
@@ -241,8 +240,8 @@ getJsonFilesInDirectory = do
 
 -- | determine whether the file is a .json artifact
 validateFile
-  :: forall eff m.
-     MonadAff (fs :: FS | eff) m
+  :: forall m.
+     MonadAff m
   => FilePath -- dir
   -> FilePath -- filepath
   -> m (Maybe FilePath)
@@ -258,8 +257,8 @@ validateFile dir f = liftAff $ do
             else Nothing
 
 getAllJsonFiles
-  :: forall eff m.
-     MonadAff (fs :: FS | eff) m
+  :: forall m.
+     MonadAff m
   => FilePath
   -> m (Array FilePath)
 getAllJsonFiles root = evalStateT getAllJsonFiles' root

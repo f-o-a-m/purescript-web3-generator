@@ -2,18 +2,15 @@ module Data.GeneratorMain where
 
 import Prelude
 
-import Control.Monad.Aff (launchAff_)
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Console (CONSOLE)
-import Control.Monad.Eff.Exception (EXCEPTION)
+import Effect.Aff (launchAff_)
+import Effect ( Effect)
 import Data.CodeGen (generatePS)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
-import Node.FS.Aff (FS)
 import Node.Yargs.Applicative (yarg, flag, runY)
 import Node.Yargs.Setup (usage, defaultVersion, defaultHelp, example)
 
-generatorMain :: forall e. Eff (fs :: FS, console :: CONSOLE, exception :: EXCEPTION | e) Unit
+generatorMain :: Effect Unit
 generatorMain = do
     conf <- runY setup mkConf
     launchAff_ $ generatePS conf

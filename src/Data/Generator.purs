@@ -12,7 +12,8 @@ import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..))
 import Data.Newtype (un)
 import Data.NonEmpty ((:|))
-import Data.String (drop, fromCharArray, joinWith, singleton, take, toCharArray, toLower, toUpper)
+import Data.String.CodeUnits (fromCharArray, toCharArray, singleton)
+import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), uncurry)
 import Network.Ethereum.Core.HexString (fromByteString)
@@ -221,7 +222,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
   let
     var = if isWhereClause then "y" else "x"
     constraints = []
-    quantifiedVars = ["e"]
+    quantifiedVars = []
     stockVars =
       if f.isConstructor
          then [var <> "0", if isWhereClause then "bc'" else "bc"]
@@ -275,7 +276,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
                  pure ["TransactionOptions NoPay"]
     let
       constraints = []
-      quantifiedVars = ["e"]
+      quantifiedVars = []
       stockVars = if f.isConstructor
                     then ["x0", "bc"]
                     else if f.constant
@@ -360,7 +361,7 @@ toReturnType constant outputs' = do
   if not constant
     then do
       import' "Network.Ethereum.Web3.Types" [IType "HexString"]
-      pure "Web3 e HexString"
+      pure "Web3 HexString"
     else do
       import' "Network.Ethereum.Web3.Types" [IType "CallError"]
       import' "Data.Either" [IType "Either"]
@@ -372,7 +373,7 @@ toReturnType constant outputs' = do
           let tupleType = "Tuple" <> show (length outputs)
           import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
           pure $ paren $ tupleType <> " " <> joinWith " " outputs
-      pure $ "Web3 e " <> paren ("Either CallError " <> out)
+      pure $ "Web3 " <> paren ("Either CallError " <> out)
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (CurriedHelperFunction h) opts =
