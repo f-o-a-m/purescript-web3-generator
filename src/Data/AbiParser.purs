@@ -6,7 +6,7 @@ import Control.Alternative ((<|>))
 import Control.Error.Util (note)
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
-import Data.Argonaut.Decode ((.?))
+import Data.Argonaut.Decode ((.:))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
@@ -24,7 +24,7 @@ import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
 import Text.Parsing.StringParser.Combinators (choice, lookAhead, manyTill, many1, optionMaybe)
-import Text.Parsing.StringParser.String (anyDigit, string, char, eof)
+import Text.Parsing.StringParser.CodePoints (anyDigit, string, char, eof)
 
 --------------------------------------------------------------------------------
 
@@ -140,7 +140,7 @@ parseSolidityType s = runParser (solidityTypeParser <* eof) s # lmap \err ->
 instance decodeJsonSolidityType :: DecodeJson SolidityType where
   decodeJson json = do
     obj <- decodeJson json
-    t <- obj .? "type"
+    t <- obj .: "type"
     parseSolidityType t
 
 --------------------------------------------------------------------------------
@@ -163,8 +163,8 @@ instance formatInput :: Format FunctionInput where
 instance decodeFunctionInput :: DecodeJson FunctionInput where
   decodeJson json = do
     obj <- decodeJson json
-    n <- obj .? "name"
-    t <- obj .? "type"
+    n <- obj .: "name"
+    t <- obj .: "type"
     typ <- parseSolidityType t
     pure $ FunctionInput {type: typ, name: n}
 
@@ -186,11 +186,11 @@ instance showSolidityFunction :: Show SolidityFunction where
 instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
   decodeJson json = do
     obj <- decodeJson json
-    nm <- obj .? "name"
-    is <- obj .? "inputs"
-    os <- obj .? "outputs"
-    c <- obj .? "constant"
-    p <- obj .? "payable"
+    nm <- obj .: "name"
+    is <- obj .: "inputs"
+    os <- obj .: "outputs"
+    c <- obj .: "constant"
+    p <- obj .: "payable"
     pure $ SolidityFunction { name : nm
                             , inputs : is
                             , outputs : os
@@ -218,7 +218,7 @@ instance showSolidityConstructor :: Show SolidityConstructor where
 instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
   decodeJson json = do
     obj <- decodeJson json
-    is <- obj .? "inputs"
+    is <- obj .: "inputs"
     pure $ SolidityConstructor { inputs : is
                                , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
                                    && not (null is)
@@ -245,10 +245,10 @@ instance formatIndexedSolidityValue :: Format IndexedSolidityValue where
 instance decodeJsonIndexedSolidityValue :: DecodeJson IndexedSolidityValue where
   decodeJson json = do
     obj <- decodeJson json
-    nm <- obj .? "name"
-    ts <- obj .? "type"
+    nm <- obj .: "name"
+    ts <- obj .: "type"
     t <- parseSolidityType ts
-    ixed <- obj .? "indexed"
+    ixed <- obj .: "indexed"
     pure $ IndexedSolidityValue { name : nm
                                 , type : t
                                 , indexed : ixed
@@ -268,9 +268,9 @@ instance showSolidityEvent :: Show SolidityEvent where
 instance decodeJsonSolidityEvent :: DecodeJson SolidityEvent where
   decodeJson json = do
     obj <- decodeJson json
-    nm <- obj .? "name"
-    is <- obj .? "inputs"
-    a <- obj .? "anonymous"
+    nm <- obj .: "name"
+    is <- obj .: "inputs"
+    a <- obj .: "anonymous"
     pure $ SolidityEvent { name : nm
                          , inputs : is
                          , anonymous : a
@@ -305,7 +305,7 @@ instance showAbiType :: Show AbiType where
 instance decodeJsonAbiType :: DecodeJson AbiType where
   decodeJson json = do
     obj <- decodeJson json
-    t <- obj .? "type"
+    t <- obj .: "type"
     let json' = fromObject obj
     case t of
       "function" -> AbiFunction <$> decodeJson json'
