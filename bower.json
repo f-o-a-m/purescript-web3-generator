@@ -18,7 +18,7 @@
     "url": "git://github.com/f-o-a-m/purescript-web3-generator.git"
   },
   "dependencies": {
-    "purescript-argonaut": "^4.0.0",
+    "purescript-argonaut": "^6.0.0",
     "purescript-ordered-collections": "^1.0.0",
     "purescript-prelude": "^4.0.0",
     "purescript-errors": "^4.0.0",
@@ -27,10 +27,10 @@
     "purescript-node-fs-aff": "^6.0.0",
     "purescript-console": "^4.0.0",
     "purescript-string-parsers": "^4.0.0",
-    "purescript-web3": "^1.0.0",
+    "purescript-web3": "^2.0.0",
     "purescript-mkdirp": "joshuahhh/purescript-mkdirp#48ecb4039d5fe3be82d0e82c3a9f2338d1af82d2",
     "purescript-fixed-points": "^5.0.0",
-    "purescript-record-extra": "^1.0.0"
+    "purescript-record-extra": "^3.0.0"
   },
   "devDependencies": {
     "purescript-spec": "^3.0.0",

@@ -448,7 +448,7 @@ data EventGenericInstance =
 instance codeEventGenericInstance :: Code EventGenericInstance where
   genCode (EventGenericInstance i) _ =
     let headers = uncurry (\n t -> "instance " <> n <> " :: " <> t <> " where") <$> (zip i.instanceNames i.instanceTypes)
-        eventGenerics = (\d -> "\t" <> d) <$> i.genericDefs
+        eventGenerics = (\d -> "  " <> d) <$> i.genericDefs
         instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
     in pure $ newLine2 $ i.genericDeriving : instances
 
@@ -515,7 +515,7 @@ instance codeEventFilterInstance :: Code EventFilterInstance where
     import' "Network.Ethereum.Web3" [IClass "EventFilter"]
     let
       header = "instance " <> i.instanceName <> " :: EventFilter " <> i.instanceType <> " where"
-      eventFilter = "\t" <> i.filterDef
+      eventFilter = "  " <> i.filterDef
     pure $ newLine1 [header, eventFilter]
 
 eventId :: SolidityEvent -> HexString
@@ -552,8 +552,8 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
     pure $
       fold
         ["defaultFilter"
-        , "\n\t\t"
-        , joinWith "\n\t\t"
+        , "\n    "
+        , joinWith "\n    "
           [ "# _address .~ Just " <> addr
           , "# _topics .~ Just [" <> eventIdStr <> indexedVals <> "]"
           ]
