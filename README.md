@@ -17,6 +17,7 @@ Generats purescript modules from Solidity ABIs
 > git clone
 > cd purescript-web3-generator
 > npm install
+> bower install
 > pulp build
 > pulp test
 ```
