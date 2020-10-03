@@ -189,17 +189,30 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
     nm <- obj .: "name"
     is <- obj .: "inputs"
     os <- obj .: "outputs"
-    c  <- obj .: "constant"
-    p  <- obj .: "payable"
+    let parseStateMutability = do
+          sm <- obj .: "stateMutability"
+          str <- decodeJson sm
+          case str of
+            "pure" -> pure { constant: true, payable: false }
+            "view" -> pure { constant: true, payable: false }
+            "payable" -> pure { constant: false, payable: true }
+            "nonpayable" -> pure { constant: false, payable: false }
+            _ -> Left "Expecting \"stateMutabiltiy\" to be one of \"pure\", \"view\", \"payable\", or \"nonpayable\""
+    let parseConstantPayableFields = do
+          constant <- obj .: "constant"
+          payable <- obj .: "payable"
+          pure { constant, payable }
+    cp <- parseStateMutability <|> parseConstantPayableFields <|> (Left "Expected a \"stateMutability\" field or a combination of \"constant\" and \"payable\" fields")
     pure $ SolidityFunction { name : nm
                             , inputs : is
                             , outputs : os
-                            , constant : c
-                            , payable: p
+                            , constant : cp.constant
+                            , payable: cp.payable
                             , isConstructor: false
                             , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
                                              && not (null is)
                             }
+
 
 --------------------------------------------------------------------------------
 -- | Solidity Constructor Parser
