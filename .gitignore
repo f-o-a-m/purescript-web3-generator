@@ -8,3 +8,4 @@
 /.psa*
 /contracts/
 package-lock.json
+/.spago/
