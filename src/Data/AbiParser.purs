@@ -135,9 +135,14 @@ solidityTypeParser = do
       Cons n ns -> SolidityVector (NonEmptyList $ n :| ns) t
   (SolidityArray t' <$ string "[]") <|> pure t'
 
+
 parseSolidityType :: String -> Either JsonDecodeError SolidityType
-parseSolidityType s = runParser (solidityTypeParser <* eof) s # lmap \err ->
-  Named ("Failed to parse SolidityType with error: " <> show err) $ UnexpectedValue (encodeJson s)
+parseSolidityType s = parseSolidityType' s # lmap \err -> Named err $ UnexpectedValue (encodeJson s)
+
+parseSolidityType' :: String -> Either String SolidityType
+parseSolidityType' s = runParser (solidityTypeParser <* eof) s # lmap \err ->
+  "Failed to parse SolidityType " <> show s <> " with error: " <> show err
+
 
 instance decodeJsonSolidityType :: DecodeJson SolidityType where
   decodeJson json = do
