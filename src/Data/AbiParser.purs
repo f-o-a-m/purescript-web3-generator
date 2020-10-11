@@ -8,6 +8,8 @@ import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.:))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
+import Data.Argonaut.Decode.Error (JsonDecodeError(..), printJsonDecodeError)
+import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
@@ -133,9 +135,9 @@ solidityTypeParser = do
       Cons n ns -> SolidityVector (NonEmptyList $ n :| ns) t
   (SolidityArray t' <$ string "[]") <|> pure t'
 
-parseSolidityType :: String -> Either String SolidityType
+parseSolidityType :: String -> Either JsonDecodeError SolidityType
 parseSolidityType s = runParser (solidityTypeParser <* eof) s # lmap \err ->
-  "Failed to parse SolidityType " <> show s <> " with error: " <> show err
+  Named ("Failed to parse SolidityType with error: " <> show err) $ UnexpectedValue (encodeJson s)
 
 instance decodeJsonSolidityType :: DecodeJson SolidityType where
   decodeJson json = do
@@ -197,12 +199,13 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
             "view" -> pure { constant: true, payable: false }
             "payable" -> pure { constant: false, payable: true }
             "nonpayable" -> pure { constant: false, payable: false }
-            _ -> Left "Expecting \"stateMutabiltiy\" to be one of \"pure\", \"view\", \"payable\", or \"nonpayable\""
+            _ -> Left $ Named "Expecting \"stateMutabiltiy\" to be one of \"pure\", \"view\", \"payable\", or \"nonpayable\"" $ UnexpectedValue sm
     let parseConstantPayableFields = do
           constant <- obj .: "constant"
           payable <- obj .: "payable"
           pure { constant, payable }
-    cp <- parseStateMutability <|> parseConstantPayableFields <|> (Left "Expected a \"stateMutability\" field or a combination of \"constant\" and \"payable\" fields")
+        fallback = Left $ Named "Expected a \"stateMutability\" field or a combination of \"constant\" and \"payable\" fields" $ UnexpectedValue json
+    cp <- parseStateMutability <|> parseConstantPayableFields <|> fallback
     pure $ SolidityFunction { name : nm
                             , inputs : is
                             , outputs : os
@@ -325,7 +328,7 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       "constructor" -> AbiConstructor <$> decodeJson json'
       "event" -> AbiEvent <$> decodeJson json'
       "fallback" -> AbiFallback <$> decodeJson json'
-      _ -> Left $ "Unkown abi type: " <> t
+      _ -> Left $ Named "Unkown abi type" $ UnexpectedValue json
 
 
 newtype Abi f = Abi (Array (f AbiType))
@@ -336,10 +339,10 @@ type AbiWithErrors = Abi (Either AbiDecodeError)
 
 instance decodeJsonAbi :: DecodeJson (Abi (Either AbiDecodeError)) where
   decodeJson json = do
-    arr <- note "Failed to decode ABI as Array type." $ A.toArray json
+    arr <- note (Named "Failed to decode ABI as Array type." $ UnexpectedValue json)  $ A.toArray json
     pure $ Abi $ mapWithIndex safeDecode arr
     where
-    safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError {idx , error}
+    safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError {idx , error: printJsonDecodeError error}
 
 instance showAbi ::
   ( Functor f

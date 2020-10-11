@@ -11,6 +11,7 @@ You can edit this file as you like.
   , "errors"
   , "eth-core"
   , "fixed-points"
+  , "mkdirp"
   , "node-fs-aff"
   , "ordered-collections"
   , "prelude"
