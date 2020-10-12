@@ -32,7 +32,7 @@ let additions =
           , "variant"
           ]
         , repo = "https://github.com/f-o-a-m/purescript-web3"
-        , version = "spago"
+        , version = "v3.0.0"
         }
       , eth-core =
         { dependencies =
