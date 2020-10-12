@@ -3,9 +3,10 @@ module Test.Main where
 import Prelude
 
 import Effect ( Effect)
+import Effect.Aff (launchAff_)
 import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Data.AbiParser (AbiWithErrors, SolidityType(..), parseSolidityType)
+import Data.AbiParser (AbiWithErrors, SolidityType(..), parseSolidityType')
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (null)
 import Data.CodeGen (generatePS, parseAbi)
@@ -15,25 +16,26 @@ import Node.FS.Aff (readTextFile)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner (run)
+import Test.Spec.Runner (runSpec)
 
 main :: Effect Unit
-main = run [consoleReporter] $ do
-  simpleStorageParserSpec
+main = launchAff_ $
+  runSpec [consoleReporter] $ do
+    simpleStorageParserSpec
 
 simpleStorageParserSpec :: Spec Unit
 simpleStorageParserSpec =
   describe "simple storage parser spec" do
     it "can parse solidity types" do
-      parseSolidityType "bytes32[2147483647][12][]" `shouldEqual`
+      parseSolidityType' "bytes32[2147483647][12][]" `shouldEqual`
         Right (SolidityArray $ SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
-      parseSolidityType "bytes32[1asd][]" `shouldEqual`
+      parseSolidityType' "bytes32[1asd][]" `shouldEqual`
         Left "Failed to parse SolidityType \"bytes32[1asd][]\" with error: Could not match character ']'"
-      parseSolidityType "bytes32[21474836471][12][]" `shouldEqual`
+      parseSolidityType' "bytes32[21474836471][12][]" `shouldEqual`
         Left "Failed to parse SolidityType \"bytes32[21474836471][12][]\" with error: Couldn't parse as Int : 21474836471"
-      parseSolidityType "bytes999[]" `shouldEqual`
+      parseSolidityType' "bytes999[]" `shouldEqual`
         Right (SolidityArray $ SolidityBytesN 999)
-      parseSolidityType "bytes32[] " `shouldEqual`
+      parseSolidityType' "bytes32[] " `shouldEqual`
         Left "Failed to parse SolidityType \"bytes32[] \" with error: Expected EOF"
 
     it "can parse the simple storage abi" do

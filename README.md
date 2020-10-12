@@ -10,16 +10,14 @@ Generats purescript modules from Solidity ABIs
 ## Requirements
 
 - `npm`
-- `psc-package`
 
 ## Getting Started
 ```
 > git clone
 > cd purescript-web3-generator
 > npm install
-> bower install
-> pulp build
-> pulp test
+> npm run build
+> npm run test
 ```
 
 ## How to use it

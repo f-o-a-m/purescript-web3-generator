@@ -15,9 +15,11 @@ import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriter, runWriterT, tell)
 import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
 import Data.Argonaut (Json, decodeJson)
+import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, nub, null, sort)
+import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
 import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
@@ -179,9 +181,9 @@ maybeAnnotateArity abi =
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
 parseAbi {truffle} abiJson = case truffle of
-  false -> decodeJson abiJson
+  false -> lmap printJsonDecodeError $ decodeJson abiJson
   true -> let mabi = abiJson ^? _Object <<< ix "abi"
-          in note "truffle artifact missing abi field" mabi >>= decodeJson
+          in note "truffle artifact missing abi field" mabi >>= \json -> lmap printJsonDecodeError $ decodeJson json
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = comment <> "\n"
