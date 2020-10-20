@@ -638,9 +638,9 @@ instance codeAbi :: Code (Abi Identity) where
                                  }
         functionCodeBlock <- funToFunctionCodeBlock f opts
         genCode functionCodeBlock opts
-      AbiFallback _ ->
-        -- Fallback is a function that gets called in case someone
-        -- sends ether to the contract with no function specified
-        -- so it's like, you would never call it on purpose, so we ignore it.
-        pure ""
+      -- Fallback and Receive are functions that get called in case someone
+      -- sends ether to the contract with no function specified
+      -- so it's like, you would never call it on purpose, so we ignore it.
+      AbiFallback _ -> pure ""
+      AbiReceive _ -> pure ""
     pure $ newLine2 codes
