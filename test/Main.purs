@@ -22,7 +22,6 @@ main :: Effect Unit
 main = launchAff_ $
   runSpec [consoleReporter] $ do
     simpleStorageParserSpec
-    generateFromAbiSpec
 
 simpleStorageParserSpec :: Spec Unit
 simpleStorageParserSpec =
@@ -65,19 +64,3 @@ simpleStorageParserSpec =
         , exprPrefix: ""
         , modulePrefix: "Contracts"
         }
-
-generateFromAbiSpec :: Spec Unit
-generateFromAbiSpec =
-  describe "generate from ABIs" do
-    it "can generate code for an ABI that includes `receive`" do
-      let
-        shouldHaveNoErrors errs = unless (null errs) do
-          fail $ "Got errors during generation: " <> show errs
-      shouldHaveNoErrors =<< generatePS
-        { jsonDir: "./abi-data/abis/receive-test"
-        , pursDir: "./contracts"
-        , truffle: false
-        , exprPrefix: ""
-        , modulePrefix: "ReceiveTest"
-        }
-
