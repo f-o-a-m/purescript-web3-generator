@@ -27,7 +27,7 @@ import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Array as Array
 import Data.Lens.Index (ix)
-import Data.Map (Map, fromFoldableWith, insert, lookup, member, toUnfoldable)
+import Data.Map (Map, fromFoldableWith, insert, lookup, member, toUnfoldable, empty)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (un)
 import Data.Map as Map
@@ -68,7 +68,7 @@ runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n
     runImport (Tuple mName mImports) = "import " <> mName <> " (" <> joinWith ", " (runModuleImports mImports) <> ")"
     runModuleImports :: ModuleImports -> Array String
     runModuleImports =
-      runAcc <<< foldl f { types: mempty, imports: mempty }
+      runAcc <<< foldl f { types: empty, imports: mempty }
       where
       runAcc :: ModuleImportsAcc -> Array String
       runAcc acc = sort $ nub $ append acc.imports $ (toUnfoldable acc.types) >>= resolveCtrImports
@@ -267,7 +267,6 @@ getAllJsonFiles root = evalStateT getAllJsonFiles' root
   where
     getAllJsonFiles' :: StateT FilePath m (Array FilePath)
     getAllJsonFiles' = do
-      cd <- get
       hereFiles <- getJsonFilesInDirectory
       hereDirectories <- getAllDirectories
       if null hereDirectories

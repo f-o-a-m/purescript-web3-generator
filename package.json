@@ -13,9 +13,8 @@
     "yargs": "^8.0.2"
   },
   "devDependencies": {
-    "pulp": "^15.0.0",
-    "purescript": "^0.13.0",
-    "purescript-psa": "^0.7.3",
-    "spago": "^0.16.0"
+    "purescript": "^0.14.2",
+    "purescript-psa": "^0.8.2",
+    "spago": "^0.20.3"
   }
 }

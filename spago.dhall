@@ -16,7 +16,6 @@ You can edit this file as you like.
   , "ordered-collections"
   , "prelude"
   , "psci-support"
-  , "record-extra"
   , "string-parsers"
   , "web3"
   , "yargs"

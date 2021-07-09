@@ -146,7 +146,7 @@ data FunTypeDecl =
               }
 
 funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
-funToTypeDecl fun@(SolidityFunction f) opts = do
+funToTypeDecl fun@(SolidityFunction f) _ = do
   factorTypes <-
     if f.isUnCurried
       then for f.inputs tagInput
@@ -303,7 +303,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         ty <- toPSType fi.type
         pure $ fi.name <> " :: " <> ty
       pure $ "{ " <> joinWith ", " rowElems <> " }"
-    whereHelper d pre is ret = do
+    whereHelper _ pre _ ret = do
       helper <- funToHelperFunction true fun opts
       tys <-
         if f.isUnCurried
@@ -349,7 +349,7 @@ toTransportPrefix isConstructor isCall outputCount = do
   pure $ modifier <> fun
 
 toPayload :: Boolean -> String -> Array String -> Imported String
-toPayload isWhereClause typeName args = do
+toPayload _ typeName args = do
   import' "Data.Functor.Tagged" [IVal "tagged"]
   let tupleType = "Tuple" <> show (length args)
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
@@ -453,7 +453,7 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
     in pure $ newLine2 $ i.genericDeriving : instances
 
 eventToEventGenericInstance :: SolidityEvent -> Imported EventGenericInstance
-eventToEventGenericInstance ev@(SolidityEvent e) = do
+eventToEventGenericInstance ev@(SolidityEvent _) = do
   (EventDataDecl decl) <- eventToDataDecl ev
   let capConst = capitalize decl.constructor
   import' "Data.Generic.Rep.Eq" [IVal "genericEq"]
@@ -561,7 +561,7 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
 
 
 eventToEventCodeBlock :: SolidityEvent -> Imported CodeBlock
-eventToEventCodeBlock ev@(SolidityEvent e) = do
+eventToEventCodeBlock ev@(SolidityEvent _) = do
   eventDec <- eventToDataDecl ev
   eventFilterInstance <- eventToEventFilterInstance ev
   decodeEventInstance <- eventToDecodeEventInstance ev

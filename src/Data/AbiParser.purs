@@ -16,8 +16,8 @@ import Data.Either (Either(..))
 import Data.Foldable (all, foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
-import Data.Generic.Rep.Eq (genericEq)
-import Data.Generic.Rep.Show (genericShow)
+import Data.Eq.Generic (genericEq)
+import Data.Show.Generic (genericShow)
 import Data.Int (fromString)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Maybe (Maybe(..))
@@ -305,7 +305,7 @@ instance showSolidityFallback :: Show SolidityFallback where
   show = genericShow
 
 instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
-  decodeJson json = do
+  decodeJson _ = do
     pure $ SolidityFallback
 
 --------------------------------------------------------------------------------
