@@ -164,14 +164,14 @@ instance codeDataDecl :: Code FunTypeDecl where
       nArgs = length decl.factorTypes
       tupleType = "Tuple" <> show nArgs
     import' "Data.Functor.Tagged" [IType "Tagged"]
-    import' "Data.Symbol" [IType "SProxy"]
+    import' "Type.Proxy" [IType "Proxy"]
     import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
     pure $
       fold
         ["type "
         , decl.typeName
         , " = "
-        , "Tagged (SProxy \"" <> decl.signature <> "\") (" <> tupleType <> " " <> joinWith " " decl.factorTypes <> ")"
+        , "Tagged (Proxy \"" <> decl.signature <> "\") (" <> tupleType <> " " <> joinWith " " decl.factorTypes <> ")"
         ]
 
 --------------------------------------------------------------------------------
@@ -322,8 +322,8 @@ tagInput
 tagInput (FunctionInput fi) = do
   ty <- toPSType fi.type
   import' "Data.Functor.Tagged" [IType "Tagged"]
-  import' "Data.Symbol" [IType "SProxy"]
-  pure $ "(Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
+  import' "Data.Symbol" [IType "Proxy"]
+  pure $ "(Tagged (Proxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
 
 toTransportPrefix :: Boolean -> Boolean -> Int -> Imported String
 toTransportPrefix isConstructor isCall outputCount = do
@@ -500,8 +500,8 @@ eventToDecodeEventInstance event@(SolidityEvent ev) = do
   where
   taggedFactor (Tuple label value) = do
     import' "Data.Functor.Tagged" [IType "Tagged"]
-    import' "Data.Symbol" [IType "SProxy"]
-    pure $ "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
+    import' "Type.Proxy" [IType "Proxy"]
+    pure $ "(Tagged (Proxy \"" <> label <> "\") " <> value <> ")"
 
 
 data EventFilterInstance =
