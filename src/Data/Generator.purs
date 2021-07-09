@@ -456,8 +456,8 @@ eventToEventGenericInstance :: SolidityEvent -> Imported EventGenericInstance
 eventToEventGenericInstance ev@(SolidityEvent _) = do
   (EventDataDecl decl) <- eventToDataDecl ev
   let capConst = capitalize decl.constructor
-  import' "Data.Generic.Rep.Eq" [IVal "genericEq"]
-  import' "Data.Generic.Rep.Show" [IVal "genericShow"]
+  import' "Data.Eq.Generic" [IVal "genericEq"]
+  import' "Data.Show.Generic" [IVal "genericShow"]
   import' "Data.Generic.Rep" [IClass "Generic"]
   pure $
     EventGenericInstance
