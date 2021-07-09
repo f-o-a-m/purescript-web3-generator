@@ -322,7 +322,7 @@ tagInput
 tagInput (FunctionInput fi) = do
   ty <- toPSType fi.type
   import' "Data.Functor.Tagged" [IType "Tagged"]
-  import' "Data.Symbol" [IType "Proxy"]
+  import' "Type.Proxy" [IType "Proxy"]
   pure $ "(Tagged (Proxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
 
 toTransportPrefix :: Boolean -> Boolean -> Int -> Imported String
