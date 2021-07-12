@@ -145,8 +145,8 @@ data FunTypeDecl =
               , typeName :: String
               }
 
-funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
-funToTypeDecl fun@(SolidityFunction f) _ = do
+funToTypeDecl :: SolidityFunction -> Imported FunTypeDecl
+funToTypeDecl fun@(SolidityFunction f) = do
   factorTypes <-
     if f.isUnCurried
       then for f.inputs tagInput
@@ -199,7 +199,7 @@ data HelperFunction
 
 funToHelperFunction :: Boolean -> SolidityFunction -> CodeOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
-  (FunTypeDecl decl) <- funToTypeDecl fun opts
+  (FunTypeDecl decl) <- funToTypeDecl fun
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
   sigPrefix <-
     if f.isConstructor
@@ -254,7 +254,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
 
 funToHelperFunction' :: SolidityFunction -> CodeOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
-    (FunTypeDecl decl) <- funToTypeDecl fun opts
+    (FunTypeDecl decl) <- funToTypeDecl fun
     import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
     sigPrefix <-
       if f.isConstructor
@@ -580,7 +580,7 @@ data CodeBlock =
 
 funToFunctionCodeBlock :: SolidityFunction -> CodeOptions -> Imported CodeBlock
 funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
-  typeDecl <- funToTypeDecl fun opts
+  typeDecl <- funToTypeDecl fun
   helperFunction <- if f.isUnCurried
                       then funToHelperFunction' fun opts
                       else funToHelperFunction false fun opts <#> CurriedHelperFunction
