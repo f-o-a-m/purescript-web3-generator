@@ -233,7 +233,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
     inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
     conVars = mapWithIndex (\i _ -> var <> show (offset + i)) inputs'
   helperTransport <- toTransportPrefix f.isConstructor f.constant $ length f.outputs
-  helperPayload <- toPayload isWhereClause decl.typeName conVars
+  helperPayload <- toPayload decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
   ins <-
     if f.isUnCurried
@@ -284,7 +284,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
                       else ["x0"]
     returnType <- toReturnType f.constant f.outputs
     recIn <- recordInput f.inputs
-    whereC <- whereHelper decl sigPrefix f.inputs returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
+    whereC <- whereHelper sigPrefix  returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
     pure $
       UnCurriedHelperFunction
         { signature: sigPrefix <> [recIn, returnType]
@@ -303,7 +303,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         ty <- toPSType fi.type
         pure $ fi.name <> " :: " <> ty
       pure $ "{ " <> joinWith ", " rowElems <> " }"
-    whereHelper _ pre _ ret = do
+    whereHelper pre ret = do
       helper <- funToHelperFunction true fun opts
       tys <-
         if f.isUnCurried
@@ -348,8 +348,8 @@ toTransportPrefix isConstructor isCall outputCount = do
       pure ""
   pure $ modifier <> fun
 
-toPayload :: Boolean -> String -> Array String -> Imported String
-toPayload _ typeName args = do
+toPayload :: String -> Array String -> Imported String
+toPayload typeName args = do
   import' "Data.Functor.Tagged" [IVal "tagged"]
   let tupleType = "Tuple" <> show (length args)
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
