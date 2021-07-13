@@ -35,7 +35,6 @@ module Generator where
 import Data.GeneratorMain (generatorMain)
 
 main = generatorMain
-
 ```
 
 2. From there, add a build step 
@@ -43,7 +42,6 @@ main = generatorMain
 ```sh
 
 pulp run -m Generator --src-path generator -- --abis <abis> --dest src --module Contracts
-
 ```
 
 (note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
