@@ -30,13 +30,13 @@ simpleStorageParserSpec =
       parseSolidityType' "bytes32[2147483647][12][]" `shouldEqual`
         Right (SolidityArray $ SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
       parseSolidityType' "bytes32[1asd][]" `shouldEqual`
-        Left "Failed to parse SolidityType \"bytes32[1asd][]\" with error: Could not match character ']'"
+        Left "Failed to parse SolidityType \"bytes32[1asd][]\" with error: { error: \"Could not match character ']'\", pos: 9 }"
       parseSolidityType' "bytes32[21474836471][12][]" `shouldEqual`
-        Left "Failed to parse SolidityType \"bytes32[21474836471][12][]\" with error: Couldn't parse as Int : 21474836471"
+        Left "Failed to parse SolidityType \"bytes32[21474836471][12][]\" with error: { error: \"Couldn't parse as Int : 21474836471\", pos: 19 }"
       parseSolidityType' "bytes999[]" `shouldEqual`
         Right (SolidityArray $ SolidityBytesN 999)
       parseSolidityType' "bytes32[] " `shouldEqual`
-        Left "Failed to parse SolidityType \"bytes32[] \" with error: Expected EOF"
+        Left "Failed to parse SolidityType \"bytes32[] \" with error: { error: \"Expected EOF\", pos: 9 }"
 
     it "can parse the simple storage abi" do
       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"

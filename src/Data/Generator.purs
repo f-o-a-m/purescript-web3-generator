@@ -145,8 +145,8 @@ data FunTypeDecl =
               , typeName :: String
               }
 
-funToTypeDecl :: SolidityFunction -> CodeOptions -> Imported FunTypeDecl
-funToTypeDecl fun@(SolidityFunction f) opts = do
+funToTypeDecl :: SolidityFunction -> Imported FunTypeDecl
+funToTypeDecl fun@(SolidityFunction f) = do
   factorTypes <-
     if f.isUnCurried
       then for f.inputs tagInput
@@ -164,14 +164,14 @@ instance codeDataDecl :: Code FunTypeDecl where
       nArgs = length decl.factorTypes
       tupleType = "Tuple" <> show nArgs
     import' "Data.Functor.Tagged" [IType "Tagged"]
-    import' "Data.Symbol" [IType "SProxy"]
+    import' "Type.Proxy" [IType "Proxy"]
     import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
     pure $
       fold
         ["type "
         , decl.typeName
         , " = "
-        , "Tagged (SProxy \"" <> decl.signature <> "\") (" <> tupleType <> " " <> joinWith " " decl.factorTypes <> ")"
+        , "Tagged (Proxy \"" <> decl.signature <> "\") (" <> tupleType <> " " <> joinWith " " decl.factorTypes <> ")"
         ]
 
 --------------------------------------------------------------------------------
@@ -199,7 +199,7 @@ data HelperFunction
 
 funToHelperFunction :: Boolean -> SolidityFunction -> CodeOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
-  (FunTypeDecl decl) <- funToTypeDecl fun opts
+  (FunTypeDecl decl) <- funToTypeDecl fun
   import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
   sigPrefix <-
     if f.isConstructor
@@ -233,7 +233,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
     inputs' = map (\(FunctionInput fi) -> fi.type) f.inputs
     conVars = mapWithIndex (\i _ -> var <> show (offset + i)) inputs'
   helperTransport <- toTransportPrefix f.isConstructor f.constant $ length f.outputs
-  helperPayload <- toPayload isWhereClause decl.typeName conVars
+  helperPayload <- toPayload decl.typeName conVars
   returnType <- toReturnType f.constant f.outputs
   ins <-
     if f.isUnCurried
@@ -254,7 +254,7 @@ funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
 
 funToHelperFunction' :: SolidityFunction -> CodeOptions -> Imported HelperFunction
 funToHelperFunction' fun@(SolidityFunction f) opts = do
-    (FunTypeDecl decl) <- funToTypeDecl fun opts
+    (FunTypeDecl decl) <- funToTypeDecl fun
     import' "Network.Ethereum.Web3.Types" [IType "TransactionOptions"]
     sigPrefix <-
       if f.isConstructor
@@ -284,7 +284,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
                       else ["x0"]
     returnType <- toReturnType f.constant f.outputs
     recIn <- recordInput f.inputs
-    whereC <- whereHelper decl sigPrefix f.inputs returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
+    whereC <- whereHelper sigPrefix  returnType >>= \h -> genCode h opts {indentationLevel = opts.indentationLevel + 4}
     pure $
       UnCurriedHelperFunction
         { signature: sigPrefix <> [recIn, returnType]
@@ -303,7 +303,7 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         ty <- toPSType fi.type
         pure $ fi.name <> " :: " <> ty
       pure $ "{ " <> joinWith ", " rowElems <> " }"
-    whereHelper d pre is ret = do
+    whereHelper pre ret = do
       helper <- funToHelperFunction true fun opts
       tys <-
         if f.isUnCurried
@@ -322,8 +322,8 @@ tagInput
 tagInput (FunctionInput fi) = do
   ty <- toPSType fi.type
   import' "Data.Functor.Tagged" [IType "Tagged"]
-  import' "Data.Symbol" [IType "SProxy"]
-  pure $ "(Tagged (SProxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
+  import' "Type.Proxy" [IType "Proxy"]
+  pure $ "(Tagged (Proxy " <> "\"" <> fi.name <> "\") " <> ty <> ")"
 
 toTransportPrefix :: Boolean -> Boolean -> Int -> Imported String
 toTransportPrefix isConstructor isCall outputCount = do
@@ -348,8 +348,8 @@ toTransportPrefix isConstructor isCall outputCount = do
       pure ""
   pure $ modifier <> fun
 
-toPayload :: Boolean -> String -> Array String -> Imported String
-toPayload isWhereClause typeName args = do
+toPayload :: String -> Array String -> Imported String
+toPayload typeName args = do
   import' "Data.Functor.Tagged" [IVal "tagged"]
   let tupleType = "Tuple" <> show (length args)
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
@@ -453,11 +453,11 @@ instance codeEventGenericInstance :: Code EventGenericInstance where
     in pure $ newLine2 $ i.genericDeriving : instances
 
 eventToEventGenericInstance :: SolidityEvent -> Imported EventGenericInstance
-eventToEventGenericInstance ev@(SolidityEvent e) = do
+eventToEventGenericInstance ev@(SolidityEvent _) = do
   (EventDataDecl decl) <- eventToDataDecl ev
   let capConst = capitalize decl.constructor
-  import' "Data.Generic.Rep.Eq" [IVal "genericEq"]
-  import' "Data.Generic.Rep.Show" [IVal "genericShow"]
+  import' "Data.Eq.Generic" [IVal "genericEq"]
+  import' "Data.Show.Generic" [IVal "genericShow"]
   import' "Data.Generic.Rep" [IClass "Generic"]
   pure $
     EventGenericInstance
@@ -500,8 +500,8 @@ eventToDecodeEventInstance event@(SolidityEvent ev) = do
   where
   taggedFactor (Tuple label value) = do
     import' "Data.Functor.Tagged" [IType "Tagged"]
-    import' "Data.Symbol" [IType "SProxy"]
-    pure $ "(Tagged (SProxy \"" <> label <> "\") " <> value <> ")"
+    import' "Type.Proxy" [IType "Proxy"]
+    pure $ "(Tagged (Proxy \"" <> label <> "\") " <> value <> ")"
 
 
 data EventFilterInstance =
@@ -561,7 +561,7 @@ eventToEventFilterInstance ev@(SolidityEvent e) = do
 
 
 eventToEventCodeBlock :: SolidityEvent -> Imported CodeBlock
-eventToEventCodeBlock ev@(SolidityEvent e) = do
+eventToEventCodeBlock ev@(SolidityEvent _) = do
   eventDec <- eventToDataDecl ev
   eventFilterInstance <- eventToEventFilterInstance ev
   decodeEventInstance <- eventToDecodeEventInstance ev
@@ -580,7 +580,7 @@ data CodeBlock =
 
 funToFunctionCodeBlock :: SolidityFunction -> CodeOptions -> Imported CodeBlock
 funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
-  typeDecl <- funToTypeDecl fun opts
+  typeDecl <- funToTypeDecl fun
   helperFunction <- if f.isUnCurried
                       then funToHelperFunction' fun opts
                       else funToHelperFunction false fun opts <#> CurriedHelperFunction

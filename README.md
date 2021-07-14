@@ -3,7 +3,7 @@
 
 [![Latest release](http://img.shields.io/github/release/f-o-a-m/purescript-web3-generator.svg?branch=master)](https://github.com/f-o-a-m/purescript-web3-generator/releases)
 [![purescript-web3-generator on Pursuit](https://pursuit.purescript.org/packages/purescript-web3-generator/badge)](https://pursuit.purescript.org/packages/purescript-web3-generator)
-[![Build status](https://travis-ci.org/f-o-a-m/purescript-web3-generator.svg?branch=master)](https://travis-ci.org/f-o-a-m/purescript-web3-generator?branch=master)
+[![Build status](https://travis-ci.com/f-o-a-m/purescript-web3-generator.svg?branch=master)](https://travis-ci.com/f-o-a-m/purescript-web3-generator?branch=master)
 
 Generats purescript modules from Solidity ABIs
 
@@ -35,7 +35,6 @@ module Generator where
 import Data.GeneratorMain (generatorMain)
 
 main = generatorMain
-
 ```
 
 2. From there, add a build step 
@@ -43,7 +42,6 @@ main = generatorMain
 ```sh
 
 pulp run -m Generator --src-path generator -- --abis <abis> --dest src --module Contracts
-
 ```
 
 (note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
