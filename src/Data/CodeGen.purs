@@ -180,10 +180,9 @@ maybeAnnotateArity abi =
     go (SolidityFunction f) = SolidityFunction f {name = f.name <> show (length f.inputs)}
 
 parseAbi :: forall r. {truffle :: Boolean | r} -> Json -> Either String AbiWithErrors
-parseAbi {truffle} abiJson = case truffle of
-  false -> lmap printJsonDecodeError $ decodeJson abiJson
-  true -> let mabi = abiJson ^? _Object <<< ix "abi"
-          in note "truffle artifact missing abi field" mabi >>= \json -> lmap printJsonDecodeError $ decodeJson json
+parseAbi _ abiJson = case abiJson ^? _Object <<< ix "abi" of
+  Nothing -> lmap printJsonDecodeError $ decodeJson abiJson
+  Just json -> lmap printJsonDecodeError $ decodeJson json
 
 genPSModuleStatement :: GeneratorOptions -> FilePath -> String
 genPSModuleStatement opts fp = comment <> "\n"

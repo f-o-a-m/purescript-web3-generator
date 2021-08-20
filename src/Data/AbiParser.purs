@@ -308,6 +308,17 @@ instance decodeJsonSolidityFallback :: DecodeJson SolidityFallback where
   decodeJson _ = do
     pure $ SolidityFallback
 
+data SolidityReceive = SolidityReceive
+
+derive instance genericSolidityReceive :: Generic SolidityReceive _
+
+instance showSolidityReceive :: Show SolidityReceive where
+  show = genericShow
+
+instance decodeJsonSolidityReceive :: DecodeJson SolidityReceive where
+  decodeJson json = do
+    pure $ SolidityReceive
+
 --------------------------------------------------------------------------------
 -- | ABI
 --------------------------------------------------------------------------------
@@ -317,6 +328,7 @@ data AbiType =
   | AbiConstructor SolidityConstructor
   | AbiEvent SolidityEvent
   | AbiFallback SolidityFallback
+  | AbiReceive SolidityReceive
 
 derive instance genericAbiType :: Generic AbiType _
 
@@ -333,6 +345,7 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       "constructor" -> AbiConstructor <$> decodeJson json'
       "event" -> AbiEvent <$> decodeJson json'
       "fallback" -> AbiFallback <$> decodeJson json'
+      "receive" -> AbiReceive <$> decodeJson json'
       _ -> Left $ Named "Unkown abi type" $ UnexpectedValue json
 
 
