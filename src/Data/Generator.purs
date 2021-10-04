@@ -49,9 +49,9 @@ toPSType s = unsafePartial $ Gen.typeParens <$> case s of
     SolidityAddress ->
       Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
     SolidityUint n -> do
-      uintN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
+      uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
       digits <- makeDigits n
-      pure $ Gen.typeApp (Gen.typeCtor uintN) [Gen.typeParens digits]
+      pure $ Gen.typeApp uintN [Gen.typeParens digits]
     SolidityInt n -> do
       intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
       digits <- makeDigits n
@@ -113,7 +113,10 @@ tagInput (FunctionInput fi) = unsafePartial $ do
   ty <- toPSType fi.type
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
   proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
-  pure $ Gen.typeApp tagged [proxy, ty]
+  pure $ Gen.typeApp tagged 
+    [ Gen.typeApp proxy [Gen.typeString fi.name]
+    , ty
+    ]
 
 -- | Data declaration
 data FunTypeDecl e =
@@ -165,6 +168,122 @@ toReturnType constant outputs' = unsafePartial do
           , out
           ]
         ]
+
+data EventDataDecl e =
+  EventDataDecl { constructor :: String
+                , indexedTypes :: Array (Tuple String (CST.Type e))
+                , nonIndexedTypes :: Array (Tuple String (CST.Type e))
+                , recordType :: Array (Tuple String (CST.Type e))
+                }
+
+eventToDataDecl 
+  :: forall e m. 
+     Monad m
+  => SolidityEvent
+  -> TidyM.CodegenT e m (Exists EventDataDecl)
+eventToDataDecl (SolidityEvent ev) = mkExists <$> do
+  let is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
+      nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
+  indexedTypes <- for is \(IndexedSolidityValue sv) -> do
+    t <- toPSType sv.type
+    pure $ Tuple sv.name t
+  nonIndexedTypes <- for nis \(IndexedSolidityValue sv) -> do
+    t <- toPSType sv.type
+    pure $ Tuple sv.name t
+  recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
+    t <- toPSType sv.type
+    pure $ Tuple sv.name t
+  pure $ EventDataDecl
+    { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
+    , indexedTypes
+    , nonIndexedTypes
+    , recordType
+    }
+  
+eventNewtypeDecl 
+  :: forall e m. 
+     Monad m
+  => SolidityEvent
+  -> EventDataDecl e
+  -> TidyM.CodegenT e m (Array (CST.Declaration e))
+eventNewtypeDecl e (EventDataDecl decl) = unsafePartial do
+  let typeDecl = Gen.declNewtype decl.constructor [] decl.constructor (Gen.typeRecord decl.recordType Nothing) 
+  newtypeDecl <- do 
+    _newtype <- TidyM.importFrom "Data.Newtype" (TidyM.importClass "Newtype")
+    pure $ Gen.declDerive Nothing [] _newtype [Gen.typeCtor decl.constructor, Gen.typeWildcard]
+  genericDecl <- do 
+    _generic <- TidyM.importFrom "Data.Generic.Rep" (TidyM.importClass "Generic")
+    pure $ Gen.declDerive Nothing [] _generic [Gen.typeCtor decl.constructor, Gen.typeWildcard]
+  showDecl <- do 
+    TidyM.importOpen "Prelude"
+    _genericShow <- TidyM.importFrom "Data.Show.Generic" (TidyM.importValue "genericShow")
+    pure $ 
+      Gen.declInstance Nothing [] "Show" [Gen.typeCtor decl.constructor]
+        [Gen.instValue "show" [] (Gen.exprIdent _genericShow)]
+  eqDecl <- do 
+    TidyM.importOpen "Prelude"
+    _genericEq <- TidyM.importFrom "Data.Eq.Generic" (TidyM.importValue "genericEq")
+    pure $ 
+      Gen.declInstance Nothing [] "Eq" [Gen.typeCtor decl.constructor]
+        [Gen.instValue "eq" [] (Gen.exprIdent _genericEq)]
+  eventFilterDecl <- do
+    TidyM.importOpen "Prelude"
+    {_fromJust, _just, _nothing} <-
+      TidyM.importFrom "Data.Maybe"
+        { _fromJust: TidyM.importValue "fromJust"
+        , _just: TidyM.importCtor "Maybe" "Just"
+        , _nothing: TidyM.importCtor "Maybe" "Nothing"
+        }
+    _unsafePartial <- TidyM.importFrom "Unsafe.Partial" (TidyM.importValue "unsafePartial")
+    set <- TidyM.importFrom "Data.Lens" (TidyM.importValue "set")
+    {_defaultFilter, _mkHexString} <- 
+      TidyM.importFrom "Newtork.Ethereum.Web3.Types"
+        { _defaultFilter: TidyM.importValue "defaultFilter"
+        , _mkHexString: TidyM.importValue "mkHexString"
+        }
+    {_address, _topics, eventFilterClass} <-
+      TidyM.importFrom "Network.Ethereum.Web3"
+         { _address: TidyM.importValue "_address"
+         , _topics: TidyM.importValue "_topics"
+         , eventFilterClass: TidyM.importClass "EventFilter"
+         }
+    pure $ 
+      Gen.declInstance Nothing [] eventFilterClass [Gen.typeCtor decl.constructor]
+        [ Gen.instValue "eventFilter" [Gen.binderWildcard, Gen.binderVar "addr"] $
+            Gen.exprOp (Gen.exprIdent _defaultFilter)
+                [ Gen.binaryOp "#"  
+                    (Gen.exprApp (Gen.exprIdent set)
+                      [ Gen.exprIdent _address
+                      , Gen.exprParens $ Gen.exprApp (Gen.exprCtor _just) [Gen.exprIdent "addr"]
+                      ]
+                    )
+                , Gen.binaryOp "#"  
+                    (Gen.exprApp (Gen.exprIdent set)
+                      [ Gen.exprIdent _topics
+                      , Gen.exprApp (Gen.exprCtor _just)
+                          [ Gen.exprArray 
+                              [ Gen.exprOp (Gen.exprCtor _just)
+                                  [ Gen.binaryOp "$" (Gen.exprIdent _unsafePartial)
+                                  , Gen.binaryOp "$" (Gen.exprIdent _fromJust)
+                                  , Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent _mkHexString) [Gen.exprString $ unHex $ eventId e])
+                                  ]
+                                
+                              , Gen.exprCtor _nothing
+                              , Gen.exprCtor _nothing
+                              ]
+                          ]
+                      ]
+                    )
+                ]
+        ]
+  pure 
+    [ typeDecl
+    , newtypeDecl
+    , genericDecl
+    , showDecl
+    , eqDecl
+    , eventFilterDecl
+    ]
 
 {-
 --------------------------------------------------------------------------------
@@ -388,32 +507,6 @@ instance codeHelperFunction :: Code HelperFunction where
 
 --------------------------------------------------------------------------------
 
-data EventDataDecl =
-  EventDataDecl { constructor :: String
-                , indexedTypes :: Array (Tuple String String)
-                , nonIndexedTypes :: Array (Tuple String String)
-                , recordType :: Array (Tuple String String)
-                }
-
-eventToDataDecl :: SolidityEvent -> Imported EventDataDecl
-eventToDataDecl (SolidityEvent ev) = do
-  let is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
-      nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
-  indexedTypes <- for is \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
-  nonIndexedTypes <- for nis \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
-  recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
-  pure $ EventDataDecl
-    { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
-    , indexedTypes
-    , nonIndexedTypes
-    , recordType
-    }
 
 
 instance codeEventDataDecl :: Code EventDataDecl where
@@ -509,10 +602,6 @@ instance codeEventFilterInstance :: Code EventFilterInstance where
       eventFilter = "  " <> i.filterDef
     pure $ newLine1 [header, eventFilter]
 
-eventId :: SolidityEvent -> HexString
-eventId (SolidityEvent e) =
-  let eventArgs = map (\a -> format a) e.inputs
-  in fromByteString $ keccak256 $ e.name <> paren (joinWith "," eventArgs)
 
 eventToEventFilterInstance :: SolidityEvent -> Imported EventFilterInstance
 eventToEventFilterInstance ev@(SolidityEvent e) = do
@@ -662,3 +751,9 @@ toSignature :: SolidityFunction -> String
 toSignature (SolidityFunction f) =
   let args = map (\i -> format i) f.inputs
   in f.name <> "(" <> joinWith "," args <> ")"
+
+
+eventId :: SolidityEvent -> HexString
+eventId (SolidityEvent e) =
+  let eventArgs = map (\a -> format a) e.inputs
+  in fromByteString $ keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
