@@ -25,6 +25,7 @@ import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
 import PureScript.CST.Types as CST
 import Partial.Unsafe (unsafePartial)
+import Data.Exists (Exists, mkExists)
 
 
 
@@ -102,30 +103,74 @@ toPSType s = unsafePartial $ Gen.typeParens <$> case s of
         Just {head, tail} -> do
           x <- expandVector (List.NonEmptyList $ head :| tail) a'
           pure $ Gen.typeApp vector [Gen.typeParens l, Gen.typeParens x]
+
+tagInput
+  :: forall e m. 
+     Monad m
+  => FunctionInput
+  -> TidyM.CodegenT e m (CST.Type e)
+tagInput (FunctionInput fi) = unsafePartial $ do
+  ty <- toPSType fi.type
+  tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
+  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
+  pure $ Gen.typeApp tagged [proxy, ty]
+
+-- | Data declaration
+data FunTypeDecl e =
+  FunTypeDecl { signature :: String
+              , factorType :: Array (CST.Type e)
+              , typeName :: String
+              }
+
+funToTypeDecl 
+  :: forall e m. 
+     Monad m 
+  => SolidityFunction 
+  -> TidyM.CodegenT e m (Exists FunTypeDecl)
+funToTypeDecl fun@(SolidityFunction f) = do
+  factorType <- for f.inputs tagInput
+  pure $ mkExists $
+    FunTypeDecl
+      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
+      , factorType
+      , signature: toSignature fun
+      }
+
+toReturnType 
+  :: forall e m. 
+     Monad m
+  => Boolean 
+  -> Array SolidityType
+  -> TidyM.CodegenT e m (CST.Type e)
+toReturnType constant outputs' = unsafePartial do
+  web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Web3")
+  if not constant
+    then do
+      hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+      pure $ Gen.typeApp web3 [hexString]
+    else do
+      callError <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "CallError")
+      _either <- Gen.typeCtor <$> TidyM.importFrom "Data.Either" (TidyM.importType "Either")
+      outputs <- for outputs' toPSType
+      out <- case uncons outputs of
+        Nothing -> pure $ Gen.typeCtor "Unit"
+        Just { head, tail: []} -> pure head
+        Just _ -> do
+          let tupleType = "Tuple" <> show (length outputs)
+          tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+          pure $ Gen.typeParens $ Gen.typeApp tuple outputs
+      pure $ Gen.typeApp web3 
+        [ Gen.typeParens $ Gen.typeApp _either
+          [ callError
+          , out
+          ]
+        ]
+
 {-
 --------------------------------------------------------------------------------
 -- | Data decleration, instances, and helpers
 --------------------------------------------------------------------------------
 
--- | Data declaration
-data FunTypeDecl e=
-  FunTypeDecl { signature :: String
-              , factorType :: Array String
-              , typeName :: String
-              }
-
-funToTypeDecl :: forall e. Monad m => SolidityFunction -> TidyM.CodegenT e m FunTypeDecl
-funToTypeDecl fun@(SolidityFunction f) = do
-  factorTypes <-
-    if f.isUnCurried
-      then for f.inputs tagInput
-      else for f.inputs $ \(FunctionInput fi) -> toPSType fi.type
-  pure $
-    FunTypeDecl
-      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
-      , factorTypes
-      , signature: toSignature fun
-      }
 
 instance codeDataDecl :: Code FunTypeDecl where
   genCode (FunTypeDecl decl) _ = do
@@ -290,17 +335,6 @@ funToHelperFunction' fun@(SolidityFunction f) opts = do
         , signature = pre <> tys <> [ret]
         }
 
-tagInput
-  :: forall e m. 
-     Monad m
-  => FunctionInput
-  -> TidyM.CodeGenT e m String
-tagInput (FunctionInput fi) = do
-  ty <- toPSType fi.type
-  TidyM.importFrom "Data.Functor.Tagged" (Gen.importType "Tagged")
-  TidyM.importFrom "Type.Proxy" (Gen.importType "Proxy")
-  pure $ Gen.typeApp (Gen.typeCtor "Tagged") (Gen.typeApp (Gen.typeCtor "Proxy") ty)
-
 toTransportPrefix :: forall e m. Monad m => Boolean -> Boolean -> Int -> TidyM.CodeGenT e m _
 toTransportPrefix isConstructor isCall outputCount = do
   fun <- if isConstructor
@@ -331,25 +365,6 @@ toPayload typeName args = do
   import' "Network.Ethereum.Web3.Solidity" [ITypeCtr tupleType]
   pure $ "((tagged $ " <> tupleType <> " " <> joinWith " " args <> ") :: " <> typeName <> ")"
 
-toReturnType :: Boolean -> Array SolidityType -> Imported String
-toReturnType constant outputs' = do
-  import' "Network.Ethereum.Web3.Types" [IType "Web3"]
-  if not constant
-    then do
-      import' "Network.Ethereum.Web3.Types" [IType "HexString"]
-      pure "Web3 HexString"
-    else do
-      import' "Network.Ethereum.Web3.Types" [IType "CallError"]
-      import' "Data.Either" [IType "Either"]
-      outputs <- for outputs' toPSType
-      out <- case uncons outputs of
-        Nothing -> pure "Unit"
-        Just { head, tail: []} -> pure head
-        Just _ -> do
-          let tupleType = "Tuple" <> show (length outputs)
-          import' "Network.Ethereum.Web3.Solidity" [IType tupleType]
-          pure $ paren $ tupleType <> " " <> joinWith " " outputs
-      pure $ "Web3 " <> paren ("Either CallError " <> out)
 
 instance codeHelperFunction :: Code HelperFunction where
   genCode (CurriedHelperFunction h) opts =
@@ -641,3 +656,9 @@ isValidType s =
   let startChar = take 1 s
   -- if the first character is the same when both lowercase and uppercase it cannot be a valid type name (e.g. underscores)
   in toUpper startChar /= toLower startChar
+
+-- e.g. "transferFrom(address,address,uint256)"
+toSignature :: SolidityFunction -> String
+toSignature (SolidityFunction f) =
+  let args = map (\i -> format i) f.inputs
+  in f.name <> "(" <> joinWith "," args <> ")"
