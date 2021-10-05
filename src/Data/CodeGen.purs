@@ -22,7 +22,7 @@ import Data.Array (catMaybes, concat, foldMap, length, nub, null, sort)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldl, for_)
-import Data.Generator (Imports, ModuleImport(..), ModuleImports, ModuleName, Imported, genCode, mkComment, newLine1)
+import Data.Generator (genCode)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Array as Array
@@ -32,7 +32,7 @@ import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (un)
 import Data.Map as Map
 import Data.String (Pattern(..), Replacement(..), joinWith, replaceAll, stripPrefix)
-import Data.Traversable (for)
+import Data.Traversable (for, traverse_)
 import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
@@ -40,6 +40,9 @@ import Node.FS.Stats as Stats
 import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 
+import Tidy.Codegen as Gen
+import Tidy.Codegen.Monad as TidyM
+import Partial.Unsafe (unsafePartial)
 
 type GeneratorOptions =
   { jsonDir :: FilePath
@@ -49,59 +52,6 @@ type GeneratorOptions =
   , modulePrefix :: String
   }
 
-data IsCtrInImports = CtrIsInImports | CtrIsNotInImports
-type ModuleImportsAcc = { types :: Map ModuleName IsCtrInImports, imports :: Array String }
-
-runImported :: GeneratorOptions -> FilePath -> Imported String -> String
-runImported opts destFile c =
-  let (Tuple code accImports) = runWriter c
-  in
-    genPSModuleStatement opts destFile
-      <> if code == ""
-        then ""
-        else "\n" <> runImports accImports <> "\n" <> code
-
-runImports :: Imports -> String
-runImports = mergeImports >>> map runImport >>> newLine1 >>> ("import Prelude \n\n" <> _)
-  where
-    runImport :: Tuple ModuleName ModuleImports -> String
-    runImport (Tuple mName mImports) = "import " <> mName <> " (" <> joinWith ", " (runModuleImports mImports) <> ")"
-    runModuleImports :: ModuleImports -> Array String
-    runModuleImports =
-      runAcc <<< foldl f { types: empty, imports: mempty }
-      where
-      runAcc :: ModuleImportsAcc -> Array String
-      runAcc acc = sort $ nub $ append acc.imports $ (toUnfoldable acc.types) >>= resolveCtrImports
-      resolveCtrImports :: Tuple String IsCtrInImports -> Array String
-      resolveCtrImports (Tuple typeName isCtrInImports) = case isCtrInImports of
-        CtrIsInImports -> []
-        CtrIsNotInImports -> [typeName]
-      f :: ModuleImportsAcc -> ModuleImport -> ModuleImportsAcc
-      f acc = case _ of
-        IType a ->
-          if member a acc.types
-            then acc
-            else acc{ types = insert a CtrIsNotInImports acc.types}
-        ITypeCtr a ->
-          case lookup a acc.types of
-            Nothing ->
-              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-            Just CtrIsInImports ->
-              acc
-            Just CtrIsNotInImports ->
-              { types: insert a CtrIsInImports acc.types, imports: acc.imports <> [ a <> "(..)" ]}
-        ITypeOp a ->
-          acc {imports = acc.imports <> [ "type (" <> a <> ")" ]}
-        IClass a ->
-          acc {imports = acc.imports <> [ "class " <> a ]}
-        IVal a ->
-          acc {imports = acc.imports <> [ a ]}
-        IOp a ->
-          acc {imports = acc.imports <> [ "(" <> a <> ")" ]}
-
-    -- NOTE this also sorts modules as we use toUnfoldable which returns ascending order result
-    mergeImports :: Imports -> Imports
-    mergeImports = fromFoldableWith append >>> toUnfoldable
 
 generatePS :: GeneratorOptions -> Aff ABIErrors
 generatePS os = do
@@ -138,10 +88,13 @@ instance showABIError :: Show ABIError where
   show (ABIError r) = "(ABIError " <> show r <> ")"
 
 generateCodeFromAbi :: GeneratorOptions -> Abi Identity -> FilePath -> String
-generateCodeFromAbi opts (Abi abi) destFile =
+generateCodeFromAbi opts (Abi abi) destFile = unsafePartial $
   let abi' = map Identity $ maybeAnnotateArity $ un Identity <$> abi
-  in genCode (Abi $ abi') { exprPrefix: opts.exprPrefix, indentationLevel: 0 }
-       # runImported opts destFile
+      moduleName = opts.modulePrefix <> "." <> basenameWithoutExt destFile ".purs"
+      _module = TidyM.codegenModule moduleName $ do 
+        declarations <- genCode (Abi $ abi') {exprPrefix: opts.exprPrefix}
+        traverse_ TidyM.write declarations
+  in Gen.printModule _module
 
 -- | read in json abi and write the generated code to a destination file
 writeCodeFromAbi :: forall m
@@ -184,14 +137,6 @@ parseAbi {truffle} abiJson = case truffle of
   false -> lmap printJsonDecodeError $ decodeJson abiJson
   true -> let mabi = abiJson ^? _Object <<< ix "abi"
           in note "truffle artifact missing abi field" mabi >>= \json -> lmap printJsonDecodeError $ decodeJson json
-
-genPSModuleStatement :: GeneratorOptions -> FilePath -> String
-genPSModuleStatement opts fp = comment <> "\n"
-  <> "module " <> opts.modulePrefix <> "."
-  <> basenameWithoutExt fp ".purs"
-  <> " where\n"
-    where
-  comment = mkComment [basenameWithoutExt fp ".purs"]
 
 
 --------------------------------------------------------------------------------

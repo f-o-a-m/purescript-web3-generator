@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Monad.Writer (Writer, tell)
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, unsnoc, snoc, zip, zipWith, (:))
+import Data.Array (filter, length, mapWithIndex, null, replicate, uncons, unsnoc, snoc, zip, zipWith, (:), concat)
 import Data.Foldable (fold)
 import Data.Identity (Identity(..))
 import Data.List (uncons) as List
@@ -25,7 +25,6 @@ import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
 import PureScript.CST.Types as CST
 import Partial.Unsafe (unsafePartial)
-import Data.Exists (Exists, mkExists)
 
 
 
@@ -35,8 +34,8 @@ type CodeOptions =
   { exprPrefix :: String
   }
 
-class Code a e m where
-  genCode :: a -> CodeOptions -> TidyM.CodegenT e m (CST.Declaration e)
+class Code a m where
+  genCode :: a -> CodeOptions -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
 
 --------------------------------------------------------------------------------
 -- | Utils
@@ -104,11 +103,34 @@ toPSType s = unsafePartial $ Gen.typeParens <$> case s of
           x <- expandVector (List.NonEmptyList $ head :| tail) a'
           pure $ Gen.typeApp vector [Gen.typeParens l, Gen.typeParens x]
 
+--------------------------------------------------------------------------------
+
+-- | Data declaration
+data FunTypeDecl =
+  FunTypeDecl { signature :: String
+              , factorType :: Array (CST.Type Void)
+              , typeName :: String
+              }
+
+funToTypeDecl 
+  :: forall m. 
+     Monad m 
+  => SolidityFunction 
+  -> TidyM.CodegenT Void m FunTypeDecl
+funToTypeDecl fun@(SolidityFunction f) = do
+  factorType <- for f.inputs tagInput
+  pure $ 
+    FunTypeDecl
+      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
+      , factorType
+      , signature: toSignature fun
+      }
+
 tagInput
-  :: forall e m. 
+  :: forall m. 
      Monad m
   => FunctionInput
-  -> TidyM.CodegenT e m (CST.Type e)
+  -> TidyM.CodegenT Void m (CST.Type Void)
 tagInput (FunctionInput fi) = unsafePartial $ do
   ty <- toPSType fi.type
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
@@ -118,33 +140,12 @@ tagInput (FunctionInput fi) = unsafePartial $ do
     , ty
     ]
 
--- | Data declaration
-data FunTypeDecl e =
-  FunTypeDecl { signature :: String
-              , factorType :: Array (CST.Type e)
-              , typeName :: String
-              }
-
-funToTypeDecl 
-  :: forall e m. 
-     Monad m 
-  => SolidityFunction 
-  -> TidyM.CodegenT e m (Exists FunTypeDecl)
-funToTypeDecl fun@(SolidityFunction f) = do
-  factorType <- for f.inputs tagInput
-  pure $ mkExists $
-    FunTypeDecl
-      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
-      , factorType
-      , signature: toSignature fun
-      }
-
 toReturnType 
-  :: forall e m. 
+  :: forall m. 
      Monad m
   => Boolean 
   -> Array SolidityType
-  -> TidyM.CodegenT e m (CST.Type e)
+  -> TidyM.CodegenT Void m (CST.Type Void)
 toReturnType constant outputs' = unsafePartial do
   web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Web3")
   if not constant
@@ -169,19 +170,22 @@ toReturnType constant outputs' = unsafePartial do
           ]
         ]
 
-data EventDataDecl e =
-  EventDataDecl { constructor :: String
-                , indexedTypes :: Array (Tuple String (CST.Type e))
-                , nonIndexedTypes :: Array (Tuple String (CST.Type e))
-                , recordType :: Array (Tuple String (CST.Type e))
-                }
+--------------------------------------------------------------------------------
 
-eventToDataDecl 
-  :: forall e m. 
+data EventData =
+  EventData { constructor :: String
+            , indexedTypes :: Array (Tuple String (CST.Type Void))
+            , nonIndexedTypes :: Array (Tuple String (CST.Type Void))
+            , recordType :: Array (Tuple String (CST.Type Void))
+            , solidityEvent :: SolidityEvent
+            }
+
+mkEventData
+  :: forall m. 
      Monad m
   => SolidityEvent
-  -> TidyM.CodegenT e m (Exists EventDataDecl)
-eventToDataDecl (SolidityEvent ev) = mkExists <$> do
+  -> TidyM.CodegenT Void m EventData
+mkEventData e@(SolidityEvent ev) = do
   let is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
       nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
   indexedTypes <- for is \(IndexedSolidityValue sv) -> do
@@ -193,39 +197,71 @@ eventToDataDecl (SolidityEvent ev) = mkExists <$> do
   recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
     t <- toPSType sv.type
     pure $ Tuple sv.name t
-  pure $ EventDataDecl
+  pure $ EventData
     { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
     , indexedTypes
     , nonIndexedTypes
     , recordType
+    , solidityEvent: e
     }
-  
-eventNewtypeDecl 
-  :: forall e m. 
+
+eventDecls 
+  :: forall m. 
      Monad m
-  => SolidityEvent
-  -> EventDataDecl e
-  -> TidyM.CodegenT e m (Array (CST.Declaration e))
-eventNewtypeDecl e (EventDataDecl decl) = unsafePartial do
+  => EventData
+  -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
+eventDecls (EventData decl) = unsafePartial do
   let typeDecl = Gen.declNewtype decl.constructor [] decl.constructor (Gen.typeRecord decl.recordType Nothing) 
+
   newtypeDecl <- do 
     _newtype <- TidyM.importFrom "Data.Newtype" (TidyM.importClass "Newtype")
     pure $ Gen.declDerive Nothing [] _newtype [Gen.typeCtor decl.constructor, Gen.typeWildcard]
+
   genericDecl <- do 
     _generic <- TidyM.importFrom "Data.Generic.Rep" (TidyM.importClass "Generic")
     pure $ Gen.declDerive Nothing [] _generic [Gen.typeCtor decl.constructor, Gen.typeWildcard]
+
   showDecl <- do 
     TidyM.importOpen "Prelude"
     _genericShow <- TidyM.importFrom "Data.Show.Generic" (TidyM.importValue "genericShow")
     pure $ 
       Gen.declInstance Nothing [] "Show" [Gen.typeCtor decl.constructor]
         [Gen.instValue "show" [] (Gen.exprIdent _genericShow)]
+
   eqDecl <- do 
     TidyM.importOpen "Prelude"
     _genericEq <- TidyM.importFrom "Data.Eq.Generic" (TidyM.importValue "genericEq")
     pure $ 
       Gen.declInstance Nothing [] "Eq" [Gen.typeCtor decl.constructor]
         [Gen.instValue "eq" [] (Gen.exprIdent _genericEq)]
+
+  indexedEventDecl <- do 
+    let f (Tuple name ty) = do
+          tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
+          proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
+          pure $ Gen.typeApp tagged 
+            [ Gen.typeApp proxy [Gen.typeString name]
+            , ty
+            ]
+    indexedTypesTagged <- for decl.indexedTypes f
+    nonIndexedTypesTagged <- for decl.nonIndexedTypes f
+    indexedTuple <- do
+      let tupleType = "Tuple" <> show (length decl.indexedTypes)
+      Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+    nonIndexedTuple <- do
+      let tupleType = "Tuple" <> show (length decl.nonIndexedTypes)
+      Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+    indexedEventClass <- TidyM.importFrom "import Network.Ethereum.Web3.Solidity" (TidyM.importClass "IndexedEvent")
+    let SolidityEvent{anonymous} = decl.solidityEvent
+    pure $
+      Gen.declInstance Nothing [] indexedEventClass 
+        [ Gen.typeApp indexedTuple $ map Gen.typeParens indexedTypesTagged
+        , Gen.typeApp nonIndexedTuple $ map Gen.typeParens nonIndexedTypesTagged
+        , Gen.typeCtor decl.constructor
+        ]
+        [ Gen.instValue "isAnonymous" [Gen.binderWildcard] (Gen.exprBool anonymous)
+        ]
+
   eventFilterDecl <- do
     TidyM.importOpen "Prelude"
     {_fromJust, _just, _nothing} <-
@@ -265,7 +301,8 @@ eventNewtypeDecl e (EventDataDecl decl) = unsafePartial do
                               [ Gen.exprOp (Gen.exprCtor _just)
                                   [ Gen.binaryOp "$" (Gen.exprIdent _unsafePartial)
                                   , Gen.binaryOp "$" (Gen.exprIdent _fromJust)
-                                  , Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent _mkHexString) [Gen.exprString $ unHex $ eventId e])
+                                  , Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent _mkHexString) 
+                                      [Gen.exprString $ unHex $ eventId decl.solidityEvent])
                                   ]
                                 
                               , Gen.exprCtor _nothing
@@ -283,7 +320,37 @@ eventNewtypeDecl e (EventDataDecl decl) = unsafePartial do
     , showDecl
     , eqDecl
     , eventFilterDecl
+    , indexedEventDecl
     ]
+  
+
+--------------------------------------------------------------------------------
+
+instance Monad m => Code (Abi Identity) m where
+  genCode (Abi abi) opts = do
+    codes <- for abi $ un Identity >>> case _ of
+      -- AbiFunction f -> pure []
+        -- functionCodeBlock <- funToFunctionCodeBlock f opts
+        -- genCode functionCodeBlock opts
+      AbiEvent e -> mkEventData e >>= eventDecls
+      -- AbiConstructor (SolidityConstructor c) -> do
+        -- let f = SolidityFunction { name : "constructor"
+        --                          , inputs : c.inputs
+        --                          , outputs : []
+        --                          , constant : false
+        --                          , payable : false
+        --                          , isConstructor : true
+        --                          , isUnCurried: c.isUnCurried
+        --                          }
+        -- functionCodeBlock <- funToFunctionCodeBlock f opts
+        -- genCode functionCodeBlock opts
+      _ -> pure []
+      --AbiFallback _ ->
+      --  -- Fallback is a function that gets called in case someone
+      --  -- sends ether to the contract with no function specified
+      --  -- so it's like, you would never call it on purpose, so we ignore it.
+      --  pure ""
+    pure $ concat codes
 
 {-
 --------------------------------------------------------------------------------
@@ -509,135 +576,6 @@ instance codeHelperFunction :: Code HelperFunction where
 
 
 
-instance codeEventDataDecl :: Code EventDataDecl where
-  genCode (EventDataDecl decl) _ = do
-    import' "Data.Newtype" [IClass "Newtype"]
-    let recordField (Tuple label val) = label <> " :: " <> val
-        newtypeDef = "newtype " <> decl.constructor <> " = " <> decl.constructor <> " {" <> joinWith "," (map recordField decl.recordType) <> "}"
-        newtypeInstanceDecl = "derive instance newtype" <> decl.constructor <> " :: Newtype " <> decl.constructor <> " _"
-    pure $
-      newLine2
-        [ newtypeDef
-        , newtypeInstanceDecl
-        ]
-
-
-data EventGenericInstance =
-  EventGenericInstance { instanceNames :: Array String
-                       , instanceTypes :: Array String
-                       , genericDefs :: Array String
-                       , genericDeriving :: String
-                       }
-
-instance codeEventGenericInstance :: Code EventGenericInstance where
-  genCode (EventGenericInstance i) _ =
-    let headers = uncurry (\n t -> "instance " <> n <> " :: " <> t <> " where") <$> (zip i.instanceNames i.instanceTypes)
-        eventGenerics = (\d -> "  " <> d) <$> i.genericDefs
-        instances = zipWith (\h g -> h <> "\n" <> g) headers eventGenerics
-    in pure $ newLine2 $ i.genericDeriving : instances
-
-eventToEventGenericInstance :: SolidityEvent -> Imported EventGenericInstance
-eventToEventGenericInstance ev@(SolidityEvent _) = do
-  (EventDataDecl decl) <- eventToDataDecl ev
-  let capConst = capitalize decl.constructor
-  import' "Data.Eq.Generic" [IVal "genericEq"]
-  import' "Data.Show.Generic" [IVal "genericShow"]
-  import' "Data.Generic.Rep" [IClass "Generic"]
-  pure $
-    EventGenericInstance
-      { instanceNames: (\n -> "eventGeneric" <> capConst <> n) <$> ["Show", "eq"]
-      , instanceTypes: (\t -> t <> " " <> capConst) <$> ["Show", "Eq"]
-      , genericDefs: ["show = genericShow", "eq = genericEq"]
-      , genericDeriving: "derive instance generic" <> capConst <> " :: Generic " <> capConst <> " _"
-      }
-
-data EventDecodeInstance =
-  EventDecodeInstance { indexedTuple :: String
-                      , nonIndexedTuple :: String
-                      , combinedType :: String
-                      , anonymous :: Boolean
-                      }
-
-instance codeEventDecodeInstance :: Code EventDecodeInstance where
-  genCode (EventDecodeInstance ev) _ = do
-    import' "Network.Ethereum.Web3.Solidity" [IClass "IndexedEvent"]
-    let indexedEventDecl = "instance indexedEvent" <> ev.combinedType <> " :: IndexedEvent " <> ev.indexedTuple <> " " <> ev.nonIndexedTuple <> " " <> ev.combinedType <> " where"
-        indexedEventBody = "isAnonymous _ = " <> show ev.anonymous
-    pure $
-      newLine1
-        [ indexedEventDecl
-        , "  " <> indexedEventBody
-        ]
-
-eventToDecodeEventInstance :: SolidityEvent -> Imported EventDecodeInstance
-eventToDecodeEventInstance event@(SolidityEvent ev) = do
-  (EventDataDecl decl) <- eventToDataDecl event
-  indexedTypesTagged <- for decl.indexedTypes taggedFactor
-  nonIndexedTypesTagged <- for decl.nonIndexedTypes taggedFactor
-  let
-    indexedTupleType = "Tuple" <> show (length decl.indexedTypes)
-    nonIndexedTupleType = "Tuple" <> show (length decl.nonIndexedTypes)
-    indexedTuple = paren $ indexedTupleType <> " " <> joinWith " " indexedTypesTagged
-    nonIndexedTuple = paren $ nonIndexedTupleType <> " " <> joinWith " " nonIndexedTypesTagged
-  import' "Network.Ethereum.Web3.Solidity" [IType indexedTupleType, IType nonIndexedTupleType]
-  pure $ EventDecodeInstance {indexedTuple, nonIndexedTuple, combinedType: decl.constructor, anonymous: ev.anonymous}
-  where
-  taggedFactor (Tuple label value) = do
-    import' "Data.Functor.Tagged" [IType "Tagged"]
-    import' "Type.Proxy" [IType "Proxy"]
-    pure $ "(Tagged (Proxy \"" <> label <> "\") " <> value <> ")"
-
-
-data EventFilterInstance =
-  EventFilterInstance { instanceName :: String
-                      , instanceType :: String
-                      , filterDef :: String
-                      }
-
-instance codeEventFilterInstance :: Code EventFilterInstance where
-  genCode (EventFilterInstance i) _ = do
-    import' "Network.Ethereum.Web3" [IClass "EventFilter"]
-    let
-      header = "instance " <> i.instanceName <> " :: EventFilter " <> i.instanceType <> " where"
-      eventFilter = "  " <> i.filterDef
-    pure $ newLine1 [header, eventFilter]
-
-
-eventToEventFilterInstance :: SolidityEvent -> Imported EventFilterInstance
-eventToEventFilterInstance ev@(SolidityEvent e) = do
-  (EventDataDecl decl) <- eventToDataDecl ev
-  filterExpr <- mkFilterExpr "addr"
-  pure $
-    EventFilterInstance
-      { instanceName: "eventFilter" <> capitalize decl.constructor
-      , instanceType: decl.constructor
-      , filterDef: "eventFilter _ addr = " <> filterExpr
-      }
-  where
-  mkFilterExpr :: String -> Imported String
-  mkFilterExpr addr = do
-    import' "Network.Ethereum.Web3.Types" [IVal "mkHexString"]
-    import' "Data.Maybe" [ITypeCtr "Maybe", IVal "fromJust"]
-    import' "Data.Lens" [IOp ".~"]
-    import' "Network.Ethereum.Web3" [IVal "_address", IVal "_topics"]
-    import' "Network.Ethereum.Web3.Types" [IVal "defaultFilter"]
-    import' "Partial.Unsafe" [IVal "unsafePartial"]
-    let
-      nIndexedArgs = length $ filter (\(IndexedSolidityValue v) -> v.indexed) e.inputs
-      indexedVals =
-        if nIndexedArgs == 0
-          then ""
-          else "," <> joinWith "," (replicate nIndexedArgs "Nothing")
-      eventIdStr = "Just ( unsafePartial $ fromJust $ mkHexString " <> "\"" <> (unHex $ eventId ev) <> "\"" <> ")"
-    pure $
-      fold
-        ["defaultFilter"
-        , "\n    "
-        , joinWith "\n    "
-          [ "# _address .~ Just " <> addr
-          , "# _topics .~ Just [" <> eventIdStr <> indexedVals <> "]"
-          ]
-        ]
 
 
 eventToEventCodeBlock :: SolidityEvent -> Imported CodeBlock
@@ -656,7 +594,7 @@ mkComment cs = let sep = (fromCharArray $ replicate 80 '-') <> "\n"
 
 data CodeBlock =
     FunctionCodeBlock FunTypeDecl HelperFunction
-  | EventCodeBlock EventDataDecl  EventFilterInstance EventDecodeInstance EventGenericInstance
+  | EventCodeBlock EventData  EventFilterInstance EventDecodeInstance EventGenericInstance
 
 funToFunctionCodeBlock :: SolidityFunction -> CodeOptions -> Imported CodeBlock
 funToFunctionCodeBlock fun@(SolidityFunction f) opts = do
@@ -683,7 +621,7 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
         , declCode
         , helperCode
         ]
-  genCode (EventCodeBlock decl@(EventDataDecl d) filterInst eventInst genericInst) opts = do
+  genCode (EventCodeBlock decl@(EventData d) filterInst eventInst genericInst) opts = do
     let header = mkComment [d.constructor]
     declCode <- genCode decl opts
     filterInstCode <- genCode filterInst opts
@@ -698,32 +636,6 @@ instance codeFunctionCodeBlock :: Code CodeBlock where
         , genericInstCode
         ]
 
-instance codeAbi :: Code (Abi Identity) where
-  genCode (Abi abi) opts = do
-    codes <- for abi $ un Identity >>> case _ of
-      AbiFunction f -> do
-        functionCodeBlock <- funToFunctionCodeBlock f opts
-        genCode functionCodeBlock opts
-      AbiEvent e -> do
-        eventCodeBlock <- eventToEventCodeBlock e
-        genCode eventCodeBlock opts
-      AbiConstructor (SolidityConstructor c) -> do
-        let f = SolidityFunction { name : "constructor"
-                                 , inputs : c.inputs
-                                 , outputs : []
-                                 , constant : false
-                                 , payable : false
-                                 , isConstructor : true
-                                 , isUnCurried: c.isUnCurried
-                                 }
-        functionCodeBlock <- funToFunctionCodeBlock f opts
-        genCode functionCodeBlock opts
-      AbiFallback _ ->
-        -- Fallback is a function that gets called in case someone
-        -- sends ether to the contract with no function specified
-        -- so it's like, you would never call it on purpose, so we ignore it.
-        pure ""
-    pure $ newLine2 codes
 
 -}
 --------------------------------------------------------------------------------
