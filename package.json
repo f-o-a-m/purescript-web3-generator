@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build": "spago build",
-    "test": "rm -rf contracts; spago -x test.dhall test"
+    "test": "rm -rf contracts; spago -x test.dhall test; spago -x test.dhall build"
   },
   "dependencies": {
     "ethjs-provider-http": "^0.1.6",

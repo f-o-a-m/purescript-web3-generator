@@ -88,9 +88,10 @@ toPSType s = unsafePartial $ Gen.typeParens <$> case s of
                 tailDs <- for tail $ \d -> do
                   d' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD d)
                   pure $ Gen.typeCtor d'
-                digitAnd <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp ":&")
-                let allRestDigits = map (Gen.binaryOp digitAnd) tailDs
-                pure $ Gen.typeOp (Gen.typeCtor head) allRestDigits
+                _ <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp "(:&)")
+                head' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD head)
+                let allRestDigits = map (Gen.binaryOp ":&") (snoc tailDs dType)
+                pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
       
   expandVector (List.NonEmptyList (n :| ns)) a' = unsafePartial do
       l <- makeDigits n
@@ -108,7 +109,7 @@ toPSType s = unsafePartial $ Gen.typeParens <$> case s of
 -- | Data declaration
 data FunTypeDecl =
   FunTypeDecl { signature :: String
-              , factorType :: Array (CST.Type Void)
+              , factorTypes :: Array (CST.Type Void)
               , typeName :: String
               }
 
@@ -118,27 +119,42 @@ funToTypeDecl
   => SolidityFunction 
   -> TidyM.CodegenT Void m FunTypeDecl
 funToTypeDecl fun@(SolidityFunction f) = do
-  factorType <- for f.inputs tagInput
+  factorTypes <- for f.inputs tagInput
   pure $ 
     FunTypeDecl
       { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
-      , factorType
+      , factorTypes
       , signature: toSignature fun
       }
+  where
+    tagInput
+      :: forall m. 
+         Monad m
+      => FunctionInput
+      -> TidyM.CodegenT Void m (CST.Type Void)
+    tagInput (FunctionInput fi) = unsafePartial $ do
+      ty <- toPSType fi.type
+      tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
+      proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
+      pure $ Gen.typeApp tagged 
+        [ Gen.typeApp proxy [Gen.typeString fi.name]
+        , ty
+        ]
 
-tagInput
-  :: forall m. 
-     Monad m
-  => FunctionInput
-  -> TidyM.CodegenT Void m (CST.Type Void)
-tagInput (FunctionInput fi) = unsafePartial $ do
-  ty <- toPSType fi.type
+
+funTypeSyn :: forall m. Monad m => FunTypeDecl -> TidyM.CodegenT Void m (CST.Declaration Void)
+funTypeSyn (FunTypeDecl decl) = unsafePartial do
+  let nArgs = length decl.factorTypes
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
   proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
-  pure $ Gen.typeApp tagged 
-    [ Gen.typeApp proxy [Gen.typeString fi.name]
-    , ty
-    ]
+  tupleType <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ "Tuple" <> show nArgs)
+  pure $ 
+    Gen.declType decl.typeName [] $
+      Gen.typeApp tagged 
+        [ Gen.typeParens (Gen.typeApp proxy [Gen.typeString decl.signature])
+        , Gen.typeApp tupleType decl.factorTypes
+        ]
+        
 
 toReturnType 
   :: forall m. 
@@ -169,6 +185,29 @@ toReturnType constant outputs' = unsafePartial do
           , out
           ]
         ]
+
+
+--------------------------------------------------------------------------------
+
+type CurriedHelperFunctionR =
+  { signature :: Array String
+  , unpackExpr :: { name :: String, stockArgs :: Array String, payloadArgs :: Array String }
+  , payload :: String
+  , transport :: String
+  , constraints :: Array String
+  , quantifiedVars :: Array String
+  }
+
+data HelperFunction
+  = CurriedHelperFunction CurriedHelperFunctionR
+  | UnCurriedHelperFunction
+      { signature :: Array String
+      , unpackExpr :: { name :: String, stockArgs :: Array String, stockArgsR :: Array String }
+      , constraints :: Array String
+      , quantifiedVars :: Array String
+      , whereClause :: String
+      }
+
 
 --------------------------------------------------------------------------------
 
@@ -251,7 +290,7 @@ eventDecls (EventData decl) = unsafePartial do
     nonIndexedTuple <- do
       let tupleType = "Tuple" <> show (length decl.nonIndexedTypes)
       Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-    indexedEventClass <- TidyM.importFrom "import Network.Ethereum.Web3.Solidity" (TidyM.importClass "IndexedEvent")
+    indexedEventClass <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importClass "IndexedEvent")
     let SolidityEvent{anonymous} = decl.solidityEvent
     pure $
       Gen.declInstance Nothing [] indexedEventClass 
@@ -270,10 +309,10 @@ eventDecls (EventData decl) = unsafePartial do
         , _just: TidyM.importCtor "Maybe" "Just"
         , _nothing: TidyM.importCtor "Maybe" "Nothing"
         }
-    _unsafePartial <- TidyM.importFrom "Unsafe.Partial" (TidyM.importValue "unsafePartial")
+    _unsafePartial <- TidyM.importFrom "Partial.Unsafe" (TidyM.importValue "unsafePartial")
     set <- TidyM.importFrom "Data.Lens" (TidyM.importValue "set")
     {_defaultFilter, _mkHexString} <- 
-      TidyM.importFrom "Newtork.Ethereum.Web3.Types"
+      TidyM.importFrom "Network.Ethereum.Web3.Types"
         { _defaultFilter: TidyM.importValue "defaultFilter"
         , _mkHexString: TidyM.importValue "mkHexString"
         }
@@ -383,25 +422,6 @@ instance codeDataDecl :: Code FunTypeDecl where
 --------------------------------------------------------------------------------
 -- | Helper functions (asynchronous call/send)
 --------------------------------------------------------------------------------
-
-type CurriedHelperFunctionR =
-  { signature :: Array String
-  , unpackExpr :: { name :: String, stockArgs :: Array String, payloadArgs :: Array String }
-  , payload :: String
-  , transport :: String
-  , constraints :: Array String
-  , quantifiedVars :: Array String
-  }
-
-data HelperFunction
-  = CurriedHelperFunction CurriedHelperFunctionR
-  | UnCurriedHelperFunction
-      { signature :: Array String
-      , unpackExpr :: { name :: String, stockArgs :: Array String, stockArgsR :: Array String }
-      , constraints :: Array String
-      , quantifiedVars :: Array String
-      , whereClause :: String
-      }
 
 funToHelperFunction :: Boolean -> SolidityFunction -> CodeOptions -> Imported CurriedHelperFunctionR
 funToHelperFunction isWhereClause fun@(SolidityFunction f) opts = do
