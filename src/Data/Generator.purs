@@ -115,12 +115,26 @@ toPSType s = unsafePartial case s of
 -- | Data declaration
 data FunData =
   FunData { signature :: String
-          , factorTypes :: Array (CST.Type Void)
+          , factorTypes :: Array (Tuple String (CST.Type Void))
           , returnType :: CST.Type Void
           , typeName :: String
           , name :: String
           , solidityFunction :: SolidityFunction
           }
+
+
+tagInput
+  :: forall m. 
+     Monad m
+  => Tuple String (CST.Type Void)
+  -> TidyM.CodegenT Void m (CST.Type Void)
+tagInput (Tuple name _type) = unsafePartial $ do
+  tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
+  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
+  pure $ Gen.typeApp tagged 
+    [ Gen.typeApp proxy [Gen.typeString name]
+    , _type
+    ]
 
 makeFunData
   :: forall m. 
@@ -129,7 +143,9 @@ makeFunData
   -> SolidityFunction 
   -> TidyM.CodegenT Void m FunData
 makeFunData {exprPrefix} fun@(SolidityFunction f) = do
-  factorTypes <- for f.inputs tagInput
+  factorTypes <- for f.inputs $ \(FunctionInput fi) -> do
+    ty <- toPSType fi.type
+    pure $ Tuple fi.name ty
   returnType <- mkReturnType
   pure $ 
     FunData
@@ -141,19 +157,6 @@ makeFunData {exprPrefix} fun@(SolidityFunction f) = do
       , solidityFunction: fun
       }
   where
-    tagInput
-      :: forall m. 
-         Monad m
-      => FunctionInput
-      -> TidyM.CodegenT Void m (CST.Type Void)
-    tagInput (FunctionInput fi) = unsafePartial $ do
-      ty <- toPSType fi.type
-      tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-      proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
-      pure $ Gen.typeApp tagged 
-        [ Gen.typeApp proxy [Gen.typeString fi.name]
-        , ty
-        ]
 
     mkReturnType = unsafePartial do
       web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Web3")
@@ -183,15 +186,10 @@ makeFunData {exprPrefix} fun@(SolidityFunction f) = do
 funTypeSyn :: forall m. Monad m => FunData -> TidyM.CodegenT Void m (CST.Declaration Void)
 funTypeSyn (FunData decl) = unsafePartial do
   let nArgs = length decl.factorTypes
-  tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
   tupleType <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ "Tuple" <> show nArgs)
+  ts <- for decl.factorTypes tagInput
   pure $ 
-    Gen.declType decl.typeName [] $
-      Gen.typeApp tagged 
-        [ Gen.typeParens (Gen.typeApp proxy [Gen.typeString decl.signature])
-        , Gen.typeApp tupleType decl.factorTypes
-        ]
+    Gen.declType decl.typeName [] $ Gen.typeApp tupleType ts
         
 
 {-
@@ -202,16 +200,115 @@ funTypeSyn (FunData decl) = unsafePartial do
 
 -}
 
-helperFunction
+mkFunction
   :: forall m.
      Monad m
   => CodeOptions
   -> FunData
-  -> { firstFactor :: CST.Type Void
-     , restFactors :: Array (CST.Type Void) 
+  -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
+mkFunction opts fun@(FunData f) = unsafePartial do
+  let SolidityFunction{payable, constant} = f.solidityFunction
+  _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
+  payAmt <- Gen.typeCtor <$> 
+    if payable 
+      then TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "NoPay")
+      else TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "MinorUnit")
+  let txOpts = Gen.typeApp _txOpts [payAmt]
+  case uncons f.factorTypes of
+    Nothing -> 
+      if constant 
+        then mkNoArgsCall txOpts 
+        else mkNoArgsSend txOpts
+    Just {head, tail} -> do 
+      helper <- mkHelperFunction opts fun {firstFactor: head, restFactors: tail}
+      ds <- if constant then mkArgsCall txOpts else mkArgsSend txOpts
+      pure $ ds <> helper
+  where
+  
+    mkNoArgsSend txOpts = unsafePartial do
+      let SolidityFunction{constant} = f.solidityFunction
+          sig = Gen.declSignature f.name (Gen.typeOp txOpts [Gen.binaryOp "->" f.returnType])
+      expr <- do
+        sendTx <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
+        tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Tagged" (TidyM.importValue "tagged")
+        tupleC <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
+        pure $ 
+          Gen.exprApp sendTx
+            [ Gen.exprIdent "x1"
+            , Gen.exprParens $ Gen.exprTyped (Gen.exprParens $ Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
+            ]
+      pure $ [sig, Gen.declValue f.name [Gen.binderVar "x1"] expr]
+
+    mkArgsSend txOpts = unsafePartial do
+      let sig = let ts = Gen.typeRecord f.factorTypes Nothing : [f.returnType] 
+                in Gen.declSignature f.name $ Gen.typeOp txOpts (map (Gen.binaryOp "->") ts)
+      expr <- do
+        uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
+        let helperName = f.name <> "'"
+        pure $ 
+          Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent "x1"])
+            [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) [Gen.exprIdent "x2"])
+            ]
+      pure $ [sig, Gen.declValue f.name (Gen.binderVar <$> ["x1","x2"]) expr]
+
+    mkNoArgsCall txOpts = unsafePartial do
+      chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
+      let sig = let ts = chainCursor : [f.returnType]
+                in Gen.declSignature f.name (Gen.typeOp txOpts $ map (Gen.binaryOp "->") ts)
+          vars = map (\i -> "x" <> show i) [1,2]
+      expr <- do
+        call <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "call")
+        tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Tagged" (TidyM.importValue "tagged")
+        tupleC <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
+        let idents = map Gen.exprIdent vars
+            SolidityFunction{outputs} = f.solidityFunction
+            callExpr = 
+              Gen.exprApp call 
+                [ unsafePartial $ unsafeIndex idents 0
+                , unsafePartial $ unsafeIndex idents 1
+                , Gen.exprParens $ Gen.exprTyped (Gen.exprParens $ Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
+                ]
+        if length outputs == 1
+          then do
+            untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
+            pure $ 
+              Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [untuple]) 
+                [ Gen.binaryOp "<$>" callExpr
+                ]
+          else pure callExpr
+      pure $ [sig, Gen.declValue f.name (map Gen.binderVar vars) expr]
+
+    mkArgsCall txOpts = unsafePartial do
+      chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
+      let sig = let ts = chainCursor : Gen.typeRecord f.factorTypes Nothing : [f.returnType]
+                in Gen.declSignature f.name (Gen.typeOp txOpts $ map (Gen.binaryOp "->") ts)
+          vars = map (\i -> "x" <> show i) [1,2,3]
+      expr <- do
+        uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
+        let helperName = f.name <> "'"
+        pure $ 
+          Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent $ unsafePartial $ unsafeIndex vars 2])
+            [ Gen.binaryOp "$" 
+              ( Gen.exprApp (Gen.exprIdent helperName) 
+                  [ Gen.exprIdent $ unsafePartial $ unsafeIndex vars 0
+                  , Gen.exprIdent $ unsafePartial $ unsafeIndex vars 1
+                  ]
+              )
+            ]
+      pure $ [sig, Gen.declValue f.name (map Gen.binderVar vars) expr]
+      
+  
+
+mkHelperFunction
+  :: forall m.
+     Monad m
+  => CodeOptions
+  -> FunData
+  -> { firstFactor :: Tuple String (CST.Type Void)
+     , restFactors :: Array (Tuple String (CST.Type Void))
      }
-  -> TidyM.CodegenT Void m (CST.Declaration Void)
-helperFunction {exprPrefix} (FunData f) {firstFactor, restFactors} = unsafePartial do
+  -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
+mkHelperFunction {exprPrefix} (FunData f) {firstFactor, restFactors} = unsafePartial do
   let SolidityFunction{constant, payable} = f.solidityFunction
   _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
   payAmt <- Gen.typeCtor <$> 
@@ -227,8 +324,10 @@ helperFunction {exprPrefix} (FunData f) {firstFactor, restFactors} = unsafeParti
     -- NOTE: there is a lot of c/p between mkSend and mkCall but they ways in which they are different is just
     -- flat out annoying
     mkSend helperName txOpts = unsafePartial do
-      let sig = let ts = (firstFactor : restFactors) `snoc` f.returnType 
-                in Gen.declSignature helperName (Gen.typeOp firstFactor $ map (Gen.binaryOp "->") ts)
+      firstFactor' <- tagInput firstFactor 
+      restFactors' <- for restFactors tagInput
+      let sig = let ts = (firstFactor' : restFactors') `snoc` f.returnType 
+                in Gen.declSignature helperName (Gen.typeOp txOpts $ map (Gen.binaryOp "->") ts)
           -- the 3 comes from TxOpts -> firstFactor -> restFactors ->  returnType
           vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 2))
       expr <- do
@@ -248,12 +347,14 @@ helperFunction {exprPrefix} (FunData f) {firstFactor, restFactors} = unsafeParti
                     ]
                 ) (Gen.typeCtor f.typeName)
           ]
-      pure $ Gen.declValue helperName (map Gen.binderVar vars) expr
+      pure $ [sig, Gen.declValue helperName (map Gen.binderVar vars) expr]
 
     mkCall helperName txOpts = unsafePartial do
       chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
-      let sig = let ts = (chainCursor : firstFactor : restFactors) `snoc` f.returnType 
-                in Gen.declSignature helperName (Gen.typeOp firstFactor $ map (Gen.binaryOp "->") ts)
+      firstFactor' <- tagInput firstFactor 
+      restFactors' <- for restFactors tagInput
+      let sig = let ts = (chainCursor : firstFactor' : restFactors') `snoc` f.returnType 
+                in Gen.declSignature helperName (Gen.typeOp txOpts $ map (Gen.binaryOp "->") ts)
           -- the 3 comes from TxOpts -> ChainCursor -> firstFactor -> restFactors ->  returnType
           vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 3))
       expr <- do
@@ -274,7 +375,7 @@ helperFunction {exprPrefix} (FunData f) {firstFactor, restFactors} = unsafeParti
                     ]
                 ) (Gen.typeCtor f.typeName)
           ]
-      pure $ Gen.declValue helperName (map Gen.binderVar vars) expr
+      pure $ [sig, Gen.declValue helperName (map Gen.binderVar vars) expr]
 
         
 
