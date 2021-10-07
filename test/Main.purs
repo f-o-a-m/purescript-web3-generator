@@ -2,7 +2,7 @@ module Test.Main where
 
 import Prelude
 
-import Effect ( Effect)
+import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
@@ -19,8 +19,9 @@ import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner (runSpec)
 
 main :: Effect Unit
-main = launchAff_ $
-  runSpec [consoleReporter] $ do
+main = launchAff_
+  $ runSpec [ consoleReporter ]
+  $ do
     simpleStorageParserSpec
 
 simpleStorageParserSpec :: Spec Unit
@@ -41,7 +42,7 @@ simpleStorageParserSpec =
     it "can parse the simple storage abi" do
       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"
       json <- either (throwError <<< error) pure ejson
-      let (eabi :: Either String AbiWithErrors) = parseAbi {truffle: true} json
+      let (eabi :: Either String AbiWithErrors) = parseAbi { truffle: true } json
       -- Note: we could check if there are errors in `AbiWithErrors`,
       -- but it will be checked as part of `generatePS` tests later.
       isRight eabi `shouldEqual` true
