@@ -50,13 +50,14 @@ simpleStorageParserSpec =
       let
         shouldHaveNoErrors errs = unless (null errs) do
           fail $ "Got errors during generation: " <> show errs
-      --shouldHaveNoErrors =<< generatePS
-      --  { jsonDir: "./abi-data/truffle/build/contracts"
-      --  , pursDir: "./contracts"
-      --  , truffle: true
-      --  , exprPrefix: ""
-      --  , modulePrefix: "ContractsTruffle"
-      --  }
+      shouldHaveNoErrors =<< generatePS
+        { jsonDir: "./abi-data/truffle/build/contracts"
+        , pursDir: "./contracts"
+        , truffle: true
+        , exprPrefix: ""
+        , modulePrefix: "ContractsTruffle"
+        }
+
       shouldHaveNoErrors =<< generatePS
         { jsonDir: "./abi-data/abis"
         , pursDir: "./contracts"
@@ -64,3 +65,4 @@ simpleStorageParserSpec =
         , exprPrefix: ""
         , modulePrefix: "Contracts"
         }
+
