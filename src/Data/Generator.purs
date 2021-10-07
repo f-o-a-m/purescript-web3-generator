@@ -14,7 +14,7 @@ import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
-import Data.Tuple (Tuple(..))
+import Data.Tuple (Tuple(..), snd)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
@@ -183,8 +183,12 @@ makeFunData {exprPrefix} fun@(SolidityFunction f) = do
 funTypeSyn :: forall m. Monad m => FunData -> TidyM.CodegenT Void m (CST.Declaration Void)
 funTypeSyn (FunData decl) = unsafePartial do
   let nArgs = length decl.factorTypes
+      SolidityFunction {isUnCurried} = decl.solidityFunction
   tupleType <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ "Tuple" <> show nArgs)
-  ts <- for decl.factorTypes tagInput
+  ts <- for decl.factorTypes $ \factor ->
+    if isUnCurried 
+      then tagInput factor
+      else pure $ snd factor
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
   proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
   pure $ 
@@ -241,21 +245,36 @@ mkFunction fun@(FunData f) = unsafePartial do
       pure [sig, Gen.declValue f.name [Gen.binderVar "x1"] expr]
 
     mkArgsSend txOpts factors = unsafePartial do
-      let sig = let ts = txOpts : [Gen.typeRecord f.factorTypes Nothing]
-                in Gen.declSignature f.name $ Gen.typeArrow ts  f.returnType
-      expr <- do
-        uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
-        let helperName = f.name <> "'"
-        pure $ 
-          Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent "x2"])
-            [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) [Gen.exprIdent "x1"])
-            ]
+      let SolidityFunction{isUnCurried} = f.solidityFunction
+      {sig, expr, vars} <- 
+        if isUnCurried 
+          then do
+            let sig = let ts = txOpts : [Gen.typeRecord f.factorTypes Nothing]
+                  in Gen.declSignature f.name $ Gen.typeArrow ts  f.returnType
+                vars = map (\i -> "x" <> show i) [1,2]
+            expr <- do
+              uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
+              let helperName = f.name <> "'"
+                  idents = map Gen.exprIdent vars
+              pure $ 
+                Gen.exprOp (Gen.exprApp uncurryFields [unsafePartial $ unsafeIndex idents 1])
+                  [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) [unsafePartial $ unsafeIndex idents 0])
+                  ]
+            pure {sig,expr, vars}
+          else do
+            let sig = let ts = txOpts : map snd f.factorTypes
+                  in Gen.declSignature f.name $ Gen.typeArrow ts f.returnType
+                vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 1))
+            expr <- do
+              let helperName = f.name <> "'"
+                  idents = map Gen.exprIdent vars
+              pure $ Gen.exprApp (Gen.exprIdent helperName) idents
+            pure {sig,expr, vars}
       helper <- mkHelperFunction fun factors
       pure 
         [ sig
-        , Gen.declValue f.name (Gen.binderVar <$> ["x1","x2"]) 
-            ( Gen.exprWhere expr helper
-            )
+        , Gen.declValue f.name (Gen.binderVar <$> vars) 
+            (Gen.exprWhere expr helper)
         ]
 
     mkNoArgsCall txOpts = unsafePartial do
@@ -289,21 +308,34 @@ mkFunction fun@(FunData f) = unsafePartial do
 
     mkArgsCall txOpts factors = unsafePartial do
       chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
-      let sig = let ts = txOpts : chainCursor : [Gen.typeRecord f.factorTypes Nothing]
-                in Gen.declSignature f.name (Gen.typeArrow ts f.returnType)
-          vars = map (\i -> "x" <> show i) [1,2,3]
-      expr <- do
-        uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
-        let helperName = f.name <> "'"
-        pure $ 
-          Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent $ unsafePartial $ unsafeIndex vars 2])
-            [ Gen.binaryOp "$" 
-              ( Gen.exprApp (Gen.exprIdent helperName) 
-                  [ Gen.exprIdent $ unsafePartial $ unsafeIndex vars 0
-                  , Gen.exprIdent $ unsafePartial $ unsafeIndex vars 1
-                  ]
-              )
-            ]
+      let SolidityFunction{isUnCurried} = f.solidityFunction
+      {expr,sig,vars} <- if isUnCurried 
+        then do
+          let sig = let ts = txOpts : chainCursor : [Gen.typeRecord f.factorTypes Nothing]
+                    in Gen.declSignature f.name (Gen.typeArrow ts f.returnType)
+              vars = map (\i -> "x" <> show i) [1,2,3]
+          expr <- do
+            uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
+            let helperName = f.name <> "'"
+            pure $ 
+              Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent $ unsafePartial $ unsafeIndex vars 2])
+                [ Gen.binaryOp "$" 
+                  ( Gen.exprApp (Gen.exprIdent helperName) 
+                      [ Gen.exprIdent $ unsafePartial $ unsafeIndex vars 0
+                      , Gen.exprIdent $ unsafePartial $ unsafeIndex vars 1
+                      ]
+                  )
+                ]
+          pure {sig,expr,vars}
+        else do
+          let sig = let ts = txOpts : chainCursor : map snd f.factorTypes
+                    in Gen.declSignature f.name (Gen.typeArrow ts f.returnType)
+              vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 2))
+          expr <- do
+            let helperName = f.name <> "'"
+                idents = map Gen.exprIdent vars
+            pure $ Gen.exprApp (Gen.exprIdent helperName) idents
+          pure {sig,expr,vars}
       helper <- mkHelperFunction fun factors
       pure 
         [ sig
@@ -356,8 +388,16 @@ mkHelperFunction (FunData f) {firstFactor, restFactors} = unsafePartial do
                     ]
                 ) (Gen.typeCtor f.typeName)
           ]
-      firstFactor' <- tagInput firstFactor 
-      restFactors' <- for restFactors tagInput
+
+      let SolidityFunction{isUnCurried} = f.solidityFunction
+      firstFactor' <- 
+        if isUnCurried 
+          then tagInput firstFactor 
+          else pure $ snd firstFactor
+      restFactors' <- for restFactors $ \factor -> 
+        if isUnCurried 
+          then tagInput factor 
+          else pure $ snd factor
       pure
         [ Gen.letSignature helperName $ Gen.typeArrow (txOpts : firstFactor' : restFactors') f.returnType
         , Gen.letValue helperName (map Gen.binderVar vars) expr
@@ -374,18 +414,34 @@ mkHelperFunction (FunData f) {firstFactor, restFactors} = unsafePartial do
           let tupleType = "Tuple" <> show (length f.factorTypes)
           Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
         let idents = map Gen.exprIdent vars
-        pure $ Gen.exprApp call 
-          [ unsafePartial $ unsafeIndex idents 0
-          , unsafePartial $ unsafeIndex idents 1
-          , Gen.exprParens $ 
-              Gen.exprTyped
-                ( Gen.exprParens $ Gen.exprOp tagged 
-                    [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 2 idents)
-                    ]
-                ) (Gen.typeCtor f.typeName)
-          ]
-      firstFactor' <- tagInput firstFactor 
-      restFactors' <- for restFactors tagInput
+            SolidityFunction{outputs} = f.solidityFunction
+            callExpr = Gen.exprApp call 
+              [ unsafePartial $ unsafeIndex idents 0
+              , unsafePartial $ unsafeIndex idents 1
+              , Gen.exprParens $ 
+                  Gen.exprTyped
+                    ( Gen.exprParens $ Gen.exprOp tagged 
+                        [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 2 idents)
+                        ]
+                    ) (Gen.typeCtor f.typeName)
+              ]
+        if length outputs == 1
+          then do
+            untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
+            pure $ 
+              Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [untuple]) 
+                [ Gen.binaryOp "<$>" callExpr
+                ]
+          else pure callExpr
+      let SolidityFunction{isUnCurried} = f.solidityFunction
+      firstFactor' <- 
+        if isUnCurried 
+          then tagInput firstFactor 
+          else pure $ snd firstFactor
+      restFactors' <- for restFactors $ \factor -> 
+        if isUnCurried 
+          then tagInput factor 
+          else pure $ snd factor
       pure
         [ Gen.letSignature helperName $ Gen.typeArrow (txOpts : chainCursor : firstFactor' : restFactors') f.returnType
         , Gen.letValue helperName (map Gen.binderVar vars) expr
