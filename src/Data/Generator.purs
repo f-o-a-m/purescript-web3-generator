@@ -190,15 +190,6 @@ funTypeSyn (FunData decl) = unsafePartial do
         [ Gen.typeApp proxy [Gen.typeString decl.signature]
         , Gen.typeApp tupleType ts
         ]
-        
-
-{-
-    transfer' :: TransactionOptions NoPay -> (Tagged (Proxy "to") Address) -> (Tagged (Proxy "amount") (UIntN (D2 :& D5 :& DOne D6))) -> Web3 HexString
-    transfer' y0 y1 y2 = sendTx y0 ((tagged $ Tuple2 y1 y2) :: TransferFn)
-
-  let 
-
--}
 
 mkFunction
   :: forall m.
@@ -607,9 +598,6 @@ instance Monad m => Code (Abi Identity) m where
   genCode (Abi abi) opts = do
     codes <- for abi $ un Identity >>> case _ of
       AbiFunction f -> codegenFunction f
-
-        -- functionCodeBlock <- funToFunctionCodeBlock f opts
-        -- genCode functionCodeBlock opts
       AbiEvent e -> mkEventData e >>= eventDecls
       AbiConstructor (SolidityConstructor c) ->
         let f = SolidityFunction { name : "constructor"
@@ -621,12 +609,7 @@ instance Monad m => Code (Abi Identity) m where
                                  , isUnCurried: c.isUnCurried
                                  }
         in codegenFunction f
-      _ -> pure []
-      --AbiFallback _ ->
-      --  -- Fallback is a function that gets called in case someone
-      --  -- sends ether to the contract with no function specified
-      --  -- so it's like, you would never call it on purpose, so we ignore it.
-      --  pure ""
+      AbiFallback _ -> pure []
     pure $ concat codes
     where 
       codegenFunction f = do
