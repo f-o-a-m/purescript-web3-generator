@@ -649,11 +649,3 @@ eventId :: SolidityEvent -> HexString
 eventId (SolidityEvent e) =
   let eventArgs = map (\a -> format a) e.inputs
   in fromByteString $ keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
-
-typeIsMultipart :: SolidityType -> Boolean
-typeIsMultipart t = case t of
-    SolidityBool -> false
-    SolidityString -> false
-    SolidityAddress -> false
-    SolidityBytesD -> false
-    _ -> true
