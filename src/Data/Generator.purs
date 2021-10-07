@@ -47,26 +47,23 @@ toPSType s = unsafePartial case s of
     SolidityUint n -> do
       uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
       digits <- makeDigits n
-      pure $ Gen.typeApp uintN [Gen.typeParens digits]
+      pure $ Gen.typeApp uintN [digits]
     SolidityInt n -> do
       intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
       digits <- makeDigits n
-      pure $ Gen.typeApp (Gen.typeCtor intN) [Gen.typeParens digits]
+      pure $ Gen.typeApp (Gen.typeCtor intN) [digits]
     SolidityString -> do
       pure $ Gen.typeCtor "String"
     SolidityBytesN n -> do
       bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
       digits <- makeDigits n
-      pure $ Gen.typeApp (Gen.typeCtor bytesN) [Gen.typeParens digits]
+      pure $ Gen.typeApp (Gen.typeCtor bytesN) [digits]
     SolidityBytesD ->
       Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
     SolidityVector ns a -> expandVector ns a
     SolidityArray a -> do
       t <- toPSType a
-      let t' = if typeIsMultipart a 
-                 then Gen.typeParens t 
-                 else t
-      pure $ Gen.typeApp (Gen.typeCtor "Array") [t']
+      pure $ Gen.typeApp (Gen.typeCtor "Array") [t]
       
   where
   makeDigits :: Int -> TidyM.CodegenT e m (CST.Type e)
@@ -83,7 +80,7 @@ toPSType s = unsafePartial case s of
         let dType = Gen.typeApp (Gen.typeCtor done) [Gen.typeCtor lastD]
         case uncons init of
           Nothing -> pure dType
-          Just {head, tail} -> Gen.typeParens <$> do
+          Just {head, tail} -> do
             tailDs <- for tail $ \d -> do
               d' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD d)
               pure $ Gen.typeCtor d'
@@ -98,13 +95,10 @@ toPSType s = unsafePartial case s of
       case List.uncons ns of
         Nothing -> do
           x <- toPSType a
-          let x' = if typeIsMultipart a  
-                     then Gen.typeParens x 
-                     else x 
-          pure $ Gen.typeApp vector [l, x']
+          pure $ Gen.typeApp vector [l, x]
         Just {head, tail} -> do
           x <- expandVector (List.NonEmptyList $ head :| tail) a
-          pure $ Gen.typeApp vector [l, Gen.typeParens x]
+          pure $ Gen.typeApp vector [l, x]
 
 --------------------------------------------------------------------------------
 
@@ -139,7 +133,6 @@ makeFunData
   -> SolidityFunction 
   -> TidyM.CodegenT Void m FunData
 makeFunData {exprPrefix} fun@(SolidityFunction f) = do
-  unsafePartial $ TidyM.importOpen "Prelude"
   factorTypes <- for f.inputs $ \(FunctionInput fi) -> do
     ty <- toPSType fi.type
     pure $ Tuple fi.name ty
@@ -171,9 +164,9 @@ makeFunData {exprPrefix} fun@(SolidityFunction f) = do
             Just _ -> do
               let tupleType = "Tuple" <> show (length outputs)
               tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-              pure $ Gen.typeParens $ Gen.typeApp tuple outputs
+              pure $ Gen.typeApp tuple outputs
           pure $ Gen.typeApp web3 
-            [ Gen.typeParens $ Gen.typeApp _either
+            [ Gen.typeApp _either
               [ callError
               , out
               ]
@@ -240,7 +233,7 @@ mkFunction fun@(FunData f) = unsafePartial do
         pure $ 
           Gen.exprApp sendTx
             [ Gen.exprIdent "x1"
-            , Gen.exprParens $ Gen.exprTyped (Gen.exprParens $ Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
+            , Gen.exprTyped (Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
             ]
       pure [sig, Gen.declValue f.name [Gen.binderVar "x1"] expr]
 
@@ -256,6 +249,8 @@ mkFunction fun@(FunData f) = unsafePartial do
               uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
               let helperName = f.name <> "'"
                   idents = map Gen.exprIdent vars
+
+              TidyM.importOpen "Prelude"
               pure $ 
                 Gen.exprOp (Gen.exprApp uncurryFields [unsafePartial $ unsafeIndex idents 1])
                   [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) [unsafePartial $ unsafeIndex idents 0])
@@ -291,11 +286,12 @@ mkFunction fun@(FunData f) = unsafePartial do
               Gen.exprApp call 
                 [ unsafePartial $ unsafeIndex idents 0
                 , unsafePartial $ unsafeIndex idents 1
-                , Gen.exprParens $ Gen.exprTyped (Gen.exprParens $ Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
+                , Gen.exprTyped (Gen.exprApp tagged [tupleC]) (Gen.typeCtor f.typeName)
                 ]
         if length outputs == 1
           then do
             untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
+            TidyM.importOpen "Prelude"
             pure $ 
               Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [untuple]) 
                 [ Gen.binaryOp "<$>" callExpr
@@ -317,6 +313,7 @@ mkFunction fun@(FunData f) = unsafePartial do
           expr <- do
             uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
             let helperName = f.name <> "'"
+            TidyM.importOpen "Prelude"
             pure $ 
               Gen.exprOp (Gen.exprApp uncurryFields [Gen.exprIdent $ unsafePartial $ unsafeIndex vars 2])
                 [ Gen.binaryOp "$" 
@@ -379,11 +376,11 @@ mkHelperFunction (FunData f) {firstFactor, restFactors} = unsafePartial do
           let tupleType = "Tuple" <> show (length f.factorTypes)
           Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
         let idents = map Gen.exprIdent vars
+        TidyM.importOpen "Prelude"
         pure $ Gen.exprApp sendTx
           [ unsafePartial $ unsafeIndex idents 0
-          , Gen.exprParens $ 
-              Gen.exprTyped
-                ( Gen.exprParens $ Gen.exprOp tagged 
+          , Gen.exprTyped
+                ( Gen.exprOp tagged 
                     [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 1 idents)
                     ]
                 ) (Gen.typeCtor f.typeName)
@@ -413,14 +410,15 @@ mkHelperFunction (FunData f) {firstFactor, restFactors} = unsafePartial do
         tupleC <- do
           let tupleType = "Tuple" <> show (length f.factorTypes)
           Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
+        TidyM.importOpen "Prelude"
         let idents = map Gen.exprIdent vars
             SolidityFunction{outputs} = f.solidityFunction
             callExpr = Gen.exprApp call 
               [ unsafePartial $ unsafeIndex idents 0
               , unsafePartial $ unsafeIndex idents 1
-              , Gen.exprParens $ 
+              ,
                   Gen.exprTyped
-                    ( Gen.exprParens $ Gen.exprOp tagged 
+                    ( Gen.exprOp tagged 
                         [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 2 idents)
                         ]
                     ) (Gen.typeCtor f.typeName)
@@ -534,8 +532,8 @@ eventDecls (EventData decl) = unsafePartial do
     let SolidityEvent{anonymous} = decl.solidityEvent
     pure $
       Gen.declInstance Nothing [] indexedEventClass 
-        [ Gen.typeApp indexedTuple $ map Gen.typeParens indexedTypesTagged
-        , Gen.typeApp nonIndexedTuple $ map Gen.typeParens nonIndexedTypesTagged
+        [ Gen.typeApp indexedTuple $ indexedTypesTagged
+        , Gen.typeApp nonIndexedTuple $ nonIndexedTypesTagged
         , Gen.typeCtor decl.constructor
         ]
         [ Gen.instValue "isAnonymous" [Gen.binderWildcard] (Gen.exprBool anonymous)
@@ -569,7 +567,7 @@ eventDecls (EventData decl) = unsafePartial do
                 [ Gen.binaryOp "#"  
                     (Gen.exprApp (Gen.exprIdent set)
                       [ Gen.exprIdent _address
-                      , Gen.exprParens $ Gen.exprApp (Gen.exprCtor _just) [Gen.exprIdent "addr"]
+                      , Gen.exprApp (Gen.exprCtor _just) [Gen.exprIdent "addr"]
                       ]
                     )
                 , Gen.binaryOp "#"  
