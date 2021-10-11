@@ -83,9 +83,9 @@ toPSType s = unsafePartial case s of
             tailDs <- for tail $ \d -> do
               d' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD d)
               pure $ Gen.typeCtor d'
-            _ <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp "(:&)")
+            digitAnd <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp "(:&)")
             head' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD head)
-            let allRestDigits = map (Gen.binaryOp ":&") (snoc tailDs dType)
+            let allRestDigits = map (Gen.binaryOp digitAnd) (snoc tailDs dType)
             pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
 
   expandVector (List.NonEmptyList (n :| ns)) a = unsafePartial do

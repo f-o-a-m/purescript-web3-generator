@@ -184,7 +184,7 @@ let additions =
           ]
         , repo =
             "https://github.com/natefaubion/purescript-tidy-codegen.git"
-        , version = "v1.1.0"
+        , version = "v1.1.1"
         }
       }
 
