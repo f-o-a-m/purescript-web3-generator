@@ -142,7 +142,7 @@ makeFunData { exprPrefix } fun@(SolidityFunction f) = do
       , factorTypes
       , signature: toSignature fun
       , returnType
-      , name: exprPrefix <> f.name
+      , name: exprPrefix <> lowerCase f.name
       , solidityFunction: fun
       }
   where
