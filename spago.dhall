@@ -23,7 +23,7 @@
   , "maybe"
   , "language-cst-parser"
   , "language-cst-codegen"
-  , "mkdirp"
+  , "open-mkdirp-aff"
   , "newtype"
   , "node-buffer"
   , "node-fs"

@@ -36,7 +36,7 @@ import Data.Tuple (Tuple(..))
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
 import Node.FS.Stats as Stats
-import Node.FS.Sync.Mkdirp (mkdirp)
+import Node.FS.Aff.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
@@ -54,7 +54,7 @@ generatePS :: GeneratorOptions -> Aff ABIErrors
 generatePS os = do
   let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
   fs <- getAllJsonFiles opts.jsonDir
-  liftEffect $ mkdirp opts.pursDir
+  _ <- mkdirp opts.pursDir
   case fs of
     [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> do
