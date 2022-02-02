@@ -1,8 +1,8 @@
-module Data.Generator where
+module Web3Generator.Generator where
 
 import Prelude
 
-import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
+import Web3Generator.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
 import Data.Identity (Identity(..))

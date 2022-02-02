@@ -1,10 +1,10 @@
-module Data.GeneratorMain where
+module Web3Generator.GeneratorMain where
 
 import Prelude
 
 import Effect.Aff (launchAff_)
 import Effect (Effect)
-import Data.CodeGen (generatePS)
+import Web3Generator.CodeGen (generatePS)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Node.Yargs.Applicative (yarg, flag, runY)

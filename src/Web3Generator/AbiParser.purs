@@ -1,4 +1,4 @@
-module Data.AbiParser where
+module Web3Generator.AbiParser where
 
 import Prelude
 

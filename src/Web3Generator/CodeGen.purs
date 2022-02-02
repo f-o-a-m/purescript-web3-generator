@@ -1,4 +1,4 @@
-module Data.CodeGen where
+module Web3Generator.CodeGen where
 
 import Prelude
 
@@ -13,7 +13,7 @@ import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
-import Data.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
+import Web3Generator.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
 import Data.Argonaut (Json, decodeJson)
 import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
@@ -22,7 +22,7 @@ import Data.Array (catMaybes, concat, foldMap, length, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (for_)
-import Data.Generator (genCode)
+import Web3Generator.Generator (genCode)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Array as Array
