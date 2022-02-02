@@ -1,5 +1,5 @@
 let upstream =
-      https://github.com/purescript/package-sets/releases/download/psc-0.14.2-20210629/packages.dhall sha256:534c490bb73cae75adb5a39871142fd8db5c2d74c90509797a80b8bb0d5c3f7b
+      https://github.com/purescript/package-sets/releases/download/psc-0.14.5-20220201/packages.dhall sha256:cea7c15d7cae3c323e940c40f656f3083616ad7cf68bb83d39241863c976348a
 
 let overrides = {=}
 
@@ -35,63 +35,48 @@ let additions =
         }
       , eth-core =
         { dependencies =
-            [ "argonaut"
-            , "bytestrings"
-            , "console"
-            , "debug"
-            , "effect"
-            , "foreign-generic"
-            , "ordered-collections"
-            , "parsing"
-            , "prelude"
-            , "psci-support"
-            , "ring-modules"
-            , "simple-json"
-            ]
-        , repo =
-            "https://github.com/f-o-a-m/purescript-eth-core.git"
-        , version =
-            "v7.0.0"
+          [ "argonaut"
+          , "bytestrings"
+          , "console"
+          , "debug"
+          , "effect"
+          , "foreign-generic"
+          , "ordered-collections"
+          , "parsing"
+          , "prelude"
+          , "psci-support"
+          , "ring-modules"
+          , "simple-json"
+          ]
+        , repo = "https://github.com/f-o-a-m/purescript-eth-core.git"
+        , version = "v7.0.0"
         }
       , coroutine-transducers =
         { dependencies =
-            [ "aff"
-            , "coroutines"
-            , "effect"
-            , "maybe"
-            , "psci-support"
-            ]
+          [ "aff", "coroutines", "effect", "maybe", "psci-support" ]
         , repo =
             "https://github.com/blinky3713/purescript-coroutine-transducers"
-        , version =
-            "v1.0.0"
+        , version = "v1.0.0"
         }
       , mkdirp =
         { dependencies =
-            [ "console"
-            , "effect"
-            , "either"
-            , "exceptions"
-            , "functions"
-            , "node-fs"
-            , "nullable"
-            , "prelude"
-            , "psci-support"
-            ]
-        , repo =
-            "https://github.com/f-o-a-m/purescript-mkdirp"
-        , version =
-            "v1.0.0"
+          [ "console"
+          , "effect"
+          , "either"
+          , "exceptions"
+          , "functions"
+          , "node-fs"
+          , "nullable"
+          , "prelude"
+          , "psci-support"
+          ]
+        , repo = "https://github.com/f-o-a-m/purescript-mkdirp"
+        , version = "v1.0.0"
         }
       , tagged =
-        { dependencies =
-            [ "identity"
-            , "profunctor"
-            ]
-        , repo =
-            "https://github.com/kejace/purescript-tagged"
-        , version =
-            "v0.14"
+        { dependencies = [ "identity", "profunctor" ]
+        , repo = "https://github.com/kejace/purescript-tagged"
+        , version = "v0.14"
         }
       , dodo-printer =
         { dependencies =
