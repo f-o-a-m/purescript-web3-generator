@@ -255,7 +255,7 @@ instance decodeJsonSolidityConstructor :: DecodeJson SolidityConstructor where
 -- | Solidity Events Parser
 --------------------------------------------------------------------------------
 
-data IndexedSolidityValue =
+newtype IndexedSolidityValue =
   IndexedSolidityValue
     { type :: SolidityType
     , name :: String
@@ -283,7 +283,7 @@ instance decodeJsonIndexedSolidityValue :: DecodeJson IndexedSolidityValue where
       , indexed: ixed
       }
 
-data SolidityEvent =
+newtype SolidityEvent =
   SolidityEvent
     { name :: String
     , anonymous :: Boolean
@@ -347,16 +347,17 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
 
 newtype Abi f = Abi (Array (f AbiType))
 
-newtype AbiDecodeError = AbiDecodeError { idx :: Int, error :: String }
+newtype AbiDecodeError = AbiDecodeError { idx :: Int, error :: JsonDecodeError }
 
 type AbiWithErrors = Abi (Either AbiDecodeError)
 
 instance decodeJsonAbi :: DecodeJson (Abi (Either AbiDecodeError)) where
+  -- String -> Either JsonDecodeError (Array (Either AbiDecodeError AbiType))
   decodeJson json = do
     arr <- note (Named "Failed to decode ABI as Array type." $ UnexpectedValue json) $ A.toArray json
     pure $ Abi $ mapWithIndex safeDecode arr
     where
-    safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError { idx, error: printJsonDecodeError error }
+    safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError { idx, error }
 
 instance showAbi ::
   ( Functor f
@@ -368,4 +369,4 @@ instance showAbi ::
     showFAbiType = map (show >>> TacitString.hush)
 
 instance showAbiDecodeError :: Show AbiDecodeError where
-  show (AbiDecodeError r) = "(AbiDecodeError " <> show r <> ")"
+  show (AbiDecodeError { idx, error }) = "(AbiDecodeError " <> show { idx, error: printJsonDecodeError error } <> ")"

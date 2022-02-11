@@ -5,42 +5,42 @@ import Prelude
 import Ansi.Codes (Color(..))
 import Ansi.Output (withGraphics, foreground)
 import Control.Error.Util (note)
-import Effect.Aff (Aff, try)
-import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Console (log)
-import Effect.Class (liftEffect)
-import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
-import Web3Generator.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
-import Data.Argonaut (Json, decodeJson)
+import Data.Argonaut (Json, JsonDecodeError, decodeJson, printJsonDecodeError)
 import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, null)
+import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (for_)
-import Web3Generator.Generator (genCode)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
-import Data.Array as Array
 import Data.Lens.Index (ix)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (un)
-import Data.Map as Map
 import Data.String (Pattern(..), Replacement(..), replaceAll, stripPrefix)
 import Data.Traversable (for, traverse_)
 import Data.Tuple (Tuple(..))
+import Effect.Aff (Aff, try)
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
+import Effect.Console (log)
+import Effect.Exception (error)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
-import Node.FS.Stats as Stats
 import Node.FS.Aff.Mkdirp (mkdirp)
+import Node.FS.Stats as Stats
 import Node.Path (FilePath, basenameWithoutExt, extname)
+import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import Partial.Unsafe (unsafePartial)
+import Web3Generator.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
+import Web3Generator.Generator (genCode)
 
 type GeneratorOptions =
   { jsonDir :: FilePath
@@ -68,7 +68,7 @@ generatePS os = do
       unless (null errs) do
         liftEffect $ log $ errorCheck <> " got " <> show (length errs) <> " error(s) during generation"
         for_ errs \(ABIError err) ->
-          liftEffect $ log $ errorCheck <> " while parsing abi type of object at index: " <> show err.idx <> " from: " <> err.abiPath <> " got error:\n    " <> err.error
+          liftEffect $ log $ errorCheck <> " while parsing abi type of object at index: " <> show err.idx <> " from: " <> err.abiPath <> " got error:\n    " <> printJsonDecodeError err.error
       pure errs
   where
   successCheck = withGraphics (foreground Green) $ "✔"
@@ -79,7 +79,11 @@ generatePS os = do
 
 type ABIErrors = Array ABIError
 
-newtype ABIError = ABIError { abiPath :: FilePath, idx :: Int, error :: String }
+newtype ABIError = ABIError
+  { abiPath :: FilePath
+  , idx :: Int
+  , error :: JsonDecodeError
+  }
 
 instance showABIError :: Show ABIError where
   show (ABIError r) = "(ABIError " <> show r <> ")"
