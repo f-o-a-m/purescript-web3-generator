@@ -1,8 +1,7 @@
 [
   {
     "constant": false,
-    "inputs": [
-    ],
+    "inputs": [],
     "name": "_functionWithUnderscore",
     "outputs": [],
     "payable": false,
