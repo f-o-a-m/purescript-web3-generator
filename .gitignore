@@ -6,6 +6,5 @@
 /.psc*
 /.purs*
 /.psa*
-/contracts/
 package-lock.json
 /.spago/
