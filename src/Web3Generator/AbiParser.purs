@@ -44,7 +44,7 @@ data SolidityType
   | SolidityInt Int
   | SolidityString
   | SolidityBytesN Int
-  | SolidityBytesD
+  | SolidityBytesD -- dynamically sized array
   | SolidityVector (NonEmptyList Int) SolidityType
   | SolidityArray SolidityType
 
@@ -95,8 +95,8 @@ asInt n = case fromString n of
     fail $ "Couldn't parse as Int : " <> n
   Just n' -> pure $ n'
 
-parseBytes :: Parser SolidityType
-parseBytes = do
+parseBytesNAndD :: Parser SolidityType
+parseBytesNAndD = do
   _ <- string "bytes"
   mns <- optionMaybe parseDigits
   case mns of
@@ -108,6 +108,7 @@ parseBytes = do
 parseAddress :: Parser SolidityType
 parseAddress = string "address" >>= \_ -> pure SolidityAddress
 
+-- everything except vector and array
 solidityBasicTypeParser :: Parser SolidityType
 solidityBasicTypeParser =
   choice
@@ -116,19 +117,18 @@ solidityBasicTypeParser =
     , parseAddress
     , parseBool
     , parseString
-    , parseBytes
-    , parseAddress
+    , parseBytesNAndD
     ]
 
-vectoDimentionsParser :: Parser (List Int)
-vectoDimentionsParser = manyTill
+vectorDimentionsParser :: Parser (List Int)
+vectorDimentionsParser = manyTill
   (char '[' *> (parseDigits >>= asInt) <* char ']')
   (lookAhead $ void (string "[]") <|> eof)
 
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
   t <- solidityBasicTypeParser
-  mbVectorDims <- vectoDimentionsParser
+  mbVectorDims <- vectorDimentionsParser
   let
     t' = case mbVectorDims of
       Nil -> t
@@ -174,7 +174,7 @@ instance decodeFunctionInput :: DecodeJson FunctionInput where
     typ <- parseSolidityType t
     pure $ FunctionInput { type: typ, name: n }
 
-data SolidityFunction =
+newtype SolidityFunction =
   SolidityFunction
     { name :: String
     , inputs :: Array FunctionInput
@@ -231,6 +231,8 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
 data SolidityConstructor =
   SolidityConstructor
     { inputs :: Array FunctionInput
+    -- curried: `constructor()` OR `constructor(string, uint256)` OR `constructor(foofield string, uint256)`
+    -- uncurried: `constructor(foofield string, foofield2 uint256)`
     , isUnCurried :: Boolean
     }
 
