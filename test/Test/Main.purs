@@ -28,6 +28,10 @@ simpleStorageParserSpec :: Spec Unit
 simpleStorageParserSpec =
   describe "simple storage parser spec" do
     it "can parse solidity types" do
+      parseSolidityType' "bool[1]" `shouldEqual`
+        Right (SolidityVector (pure 1) SolidityBool)
+      parseSolidityType' "bytes32[2147483647][12]" `shouldEqual`
+        Right (SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
       parseSolidityType' "bytes32[2147483647][12][]" `shouldEqual`
         Right (SolidityArray $ SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
       parseSolidityType' "bytes32[1asd][]" `shouldEqual`

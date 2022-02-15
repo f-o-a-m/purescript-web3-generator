@@ -44,8 +44,11 @@ data SolidityType
   | SolidityInt Int
   | SolidityString
   | SolidityBytesN Int
-  | SolidityBytesD -- dynamically sized array
+  -- dynamically sized array
+  | SolidityBytesD
+  -- `SolidityVector [1,2] SolidityBool` = `bool[1][2]` = 1 boolean inside 1-elem array, which is inside of 2-elem array
   | SolidityVector (NonEmptyList Int) SolidityType
+  -- `SolidityArray SolidityBool` = `bool[]` = dinamically sized array of booleans
   | SolidityArray SolidityType
 
 derive instance genericSolidityType :: Generic SolidityType _
