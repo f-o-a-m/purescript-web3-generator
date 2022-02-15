@@ -643,6 +643,7 @@ instance Monad m => Code (Abi Identity) m where
         in
           codegenFunction f
       AbiFallback _ -> pure []
+      AbiReceive _ -> pure []
     pure $ concat codes
     where
     codegenFunction f = do
