@@ -8,7 +8,7 @@ import Data.Array as Array
 import Data.Identity (Identity(..))
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
 import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (toCharArray, singleton)
@@ -174,17 +174,22 @@ funTypeSyn :: forall m. Monad m => FunData -> TidyM.CodegenT Void m (CST.Declara
 funTypeSyn (FunData decl) = unsafePartial do
   let
     nArgs = length decl.factorTypes
-    SolidityFunction { isUnCurried } = decl.solidityFunction
+    SolidityFunction { isUnCurried, isConstructor } = decl.solidityFunction
   tupleType <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ "Tuple" <> show nArgs)
   ts <- for decl.factorTypes $ \factor ->
     if isUnCurried then tagInput factor
     else pure $ snd factor
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
   proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
+  t <-
+    if isConstructor then do
+      TidyM.importOpen "Prelude"
+      pure $ Gen.typeCtor "Void"
+    else pure $ Gen.typeString decl.signature
   pure
     $ Gen.declType decl.typeName []
     $ Gen.typeApp tagged
-      [ Gen.typeApp proxy [ Gen.typeString decl.signature ]
+      [ Gen.typeApp proxy [ t ]
       , Gen.typeApp tupleType ts
       ]
 
@@ -194,7 +199,7 @@ mkFunction
   => FunData
   -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
 mkFunction fun@(FunData f) = unsafePartial do
-  let SolidityFunction { payable, constant } = f.solidityFunction
+  let SolidityFunction { payable, constant, isConstructor } = f.solidityFunction
   _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
   payAmt <- Gen.typeCtor <$>
     if payable then TidyM.importFrom "Network.Ethereum.Web3.Types.TokenUnit" (TidyM.importType "MinorUnit")
@@ -203,36 +208,47 @@ mkFunction fun@(FunData f) = unsafePartial do
   case uncons f.factorTypes of
     Nothing ->
       if constant then mkNoArgsCall txOpts
-      else mkNoArgsSend txOpts
+      else if isConstructor then do
+        hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+        mkNoArgsSend [ txOpts, hexString ]
+      else mkNoArgsSend [ txOpts ]
     Just { head, tail } -> do
       if constant then mkArgsCall txOpts { firstFactor: head, restFactors: tail }
-      else mkArgsSend txOpts { firstFactor: head, restFactors: tail }
+      else if isConstructor then do
+        hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+        mkArgsSend [ txOpts, hexString ] { firstFactor: head, restFactors: tail }
+      else mkArgsSend [ txOpts ] { firstFactor: head, restFactors: tail }
   where
 
-  mkNoArgsSend txOpts = unsafePartial do
-    let sig = Gen.declSignature f.name (Gen.typeArrow [ txOpts ] f.returnType)
+  mkNoArgsSend args = unsafePartial do
+    let
+      sig = Gen.declSignature f.name (Gen.typeArrow args f.returnType)
+      SolidityFunction { isConstructor } = f.solidityFunction
+      vars = map (\i -> "x" <> show i) (1 .. length args)
     expr <- do
-      sendTx <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
+      sendTx <-
+        if isConstructor then Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
+        else Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
       tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
       tupleC <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
       pure $
         Gen.exprApp sendTx
-          [ Gen.exprIdent "x1"
-          , Gen.exprTyped (Gen.exprApp tagged [ tupleC ]) (Gen.typeCtor f.typeName)
-          ]
-    pure [ sig, Gen.declValue f.name [ Gen.binderVar "x1" ] expr ]
+          ( map Gen.exprIdent vars `snoc`
+              Gen.exprTyped (Gen.exprApp tagged [ tupleC ]) (Gen.typeCtor f.typeName)
+          )
+    pure [ sig, Gen.declValue f.name (map Gen.binderVar vars) expr ]
 
-  mkArgsSend txOpts factors = unsafePartial do
+  mkArgsSend args factors = unsafePartial do
     let SolidityFunction { isUnCurried } = f.solidityFunction
     { sig, expr, vars } <-
       if isUnCurried then do
         let
           sig =
             let
-              ts = txOpts : [ Gen.typeRecord f.factorTypes Nothing ]
+              ts = args `snoc` Gen.typeRecord f.factorTypes Nothing
             in
               Gen.declSignature f.name $ Gen.typeArrow ts f.returnType
-          vars = map (\i -> "x" <> show i) [ 1, 2 ]
+          vars = map (\i -> "x" <> show i) (1 .. (length args + 1))
         expr <- do
           uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
           let
@@ -241,18 +257,18 @@ mkFunction fun@(FunData f) = unsafePartial do
 
           TidyM.importOpen "Prelude"
           pure $
-            Gen.exprOp (Gen.exprApp uncurryFields [ unsafePartial $ unsafeIndex idents 1 ])
-              [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) [ unsafePartial $ unsafeIndex idents 0 ])
+            Gen.exprOp (Gen.exprApp uncurryFields [ unsafePartial $ fromJust $ Array.last idents ])
+              [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) (Array.take (length args) idents))
               ]
         pure { sig, expr, vars }
       else do
         let
           sig =
             let
-              ts = txOpts : map snd f.factorTypes
+              ts = args <> map snd f.factorTypes
             in
               Gen.declSignature f.name $ Gen.typeArrow ts f.returnType
-          vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 1))
+          vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + length args))
         expr <- do
           let
             helperName = f.name <> "'"
@@ -354,7 +370,7 @@ mkHelperFunction
      }
   -> TidyM.CodegenT Void m (Array (CST.LetBinding Void))
 mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
-  let SolidityFunction { constant, payable } = f.solidityFunction
+  let SolidityFunction { constant, payable, isConstructor } = f.solidityFunction
   _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
   payAmt <- Gen.typeCtor <$>
     if payable then TidyM.importFrom "Network.Ethereum.Web3.Types.TokenUnit" (TidyM.importType "MinorUnit")
@@ -363,15 +379,20 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
     txOpts = Gen.typeApp _txOpts [ payAmt ]
     helperName = f.name <> "'"
   if constant then mkCall helperName txOpts
-  else mkSend helperName txOpts
+  else if isConstructor then do
+    hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+    mkSend helperName [ txOpts, hexString ]
+  else mkSend helperName [ txOpts ]
   where
   -- NOTE: there is a lot of c/p between mkSend and mkCall but they ways in which they are different is just
   -- flat out annoying
-  mkSend helperName txOpts = unsafePartial do
-    -- the 3 comes from TxOpts -> firstFactor -> restFactors ->  returnType
-    let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + 1))
+  mkSend helperName args = unsafePartial do
+    let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + length args))
     expr <- do
-      sendTx <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
+      let SolidityFunction { isConstructor } = f.solidityFunction
+      sendTx <-
+        if isConstructor then Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
+        else Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
       tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
       tupleC <- do
         let tupleType = "Tuple" <> show (length f.factorTypes)
@@ -379,14 +400,14 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
       let idents = map Gen.exprIdent vars
       TidyM.importOpen "Prelude"
       pure $ Gen.exprApp sendTx
-        [ unsafePartial $ unsafeIndex idents 0
-        , Gen.exprTyped
-            ( Gen.exprOp tagged
-                [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 1 idents)
-                ]
-            )
-            (Gen.typeCtor f.typeName)
-        ]
+        ( Array.take (length args) idents `snoc`
+            Gen.exprTyped
+              ( Gen.exprOp tagged
+                  [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop (length args) idents)
+                  ]
+              )
+              (Gen.typeCtor f.typeName)
+        )
 
     let SolidityFunction { isUnCurried } = f.solidityFunction
     firstFactor' <-
@@ -396,7 +417,7 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
       if isUnCurried then tagInput factor
       else pure $ snd factor
     pure
-      [ Gen.letSignature helperName $ Gen.typeArrow (txOpts : firstFactor' : restFactors') f.returnType
+      [ Gen.letSignature helperName $ Gen.typeArrow (args <> (firstFactor' : restFactors')) f.returnType
       , Gen.letValue helperName (map Gen.binderVar vars) expr
       ]
 
