@@ -4,6 +4,7 @@ import Prelude
 
 import Control.Alternative ((<|>))
 import Control.Error.Util (note)
+import Data.Argonaut (Json)
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.:))
@@ -13,15 +14,15 @@ import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
+import Data.Eq.Generic (genericEq)
 import Data.Foldable (all, foldMap)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
-import Data.Eq.Generic (genericEq)
-import Data.Show.Generic (genericShow)
 import Data.Int (fromString)
 import Data.List.Types (List(..), NonEmptyList(..))
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
+import Data.Show.Generic (genericShow)
 import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
@@ -184,8 +185,8 @@ newtype SolidityFunction =
     , outputs :: Array SolidityType
     , constant :: Boolean
     , payable :: Boolean
-    , isConstructor :: Boolean
-    , isUnCurried :: Boolean
+    , isConstructor :: Boolean -- TODO: remove
+    , isUnCurried :: Boolean -- TODO: remove
     }
 
 derive instance genericSolidityFunction :: Generic SolidityFunction _
@@ -231,7 +232,7 @@ instance decodeJsonSolidityFunction :: DecodeJson SolidityFunction where
 -- | Solidity Constructor Parser
 --------------------------------------------------------------------------------
 
-data SolidityConstructor =
+newtype SolidityConstructor =
   SolidityConstructor
     { inputs :: Array FunctionInput
     -- curried: `constructor()` OR `constructor(string, uint256)` OR `constructor(foofield string, uint256)`
@@ -361,28 +362,11 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       "receive" -> AbiReceive <$> decodeJson json'
       _ -> Left $ Named "Unkown abi type" $ UnexpectedValue json
 
-newtype Abi f = Abi (Array (f AbiType))
-
 newtype AbiDecodeError = AbiDecodeError { idx :: Int, error :: JsonDecodeError }
 
-type AbiWithErrors = Abi (Either AbiDecodeError)
-
-instance decodeJsonAbi :: DecodeJson (Abi (Either AbiDecodeError)) where
-  -- String -> Either JsonDecodeError (Array (Either AbiDecodeError AbiType))
-  decodeJson json = do
-    arr <- note (Named "Failed to decode ABI as Array type." $ UnexpectedValue json) $ A.toArray json
-    pure $ Abi $ mapWithIndex safeDecode arr
-    where
-    safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError { idx, error }
-
-instance showAbi ::
-  ( Functor f
-  , Show (f TacitString.TacitString)
-  ) =>
-  Show (Abi f) where
-  show (Abi abis) = "(Abi " <> show (map showFAbiType abis) <> ")"
-    where
-    showFAbiType = map (show >>> TacitString.hush)
-
-instance showAbiDecodeError :: Show AbiDecodeError where
-  show (AbiDecodeError { idx, error }) = "(AbiDecodeError " <> show { idx, error: printJsonDecodeError error } <> ")"
+decodeArrayOfAbiTipes :: Json -> Either JsonDecodeError (Array (Either AbiDecodeError AbiType))
+decodeArrayOfAbiTipes json = do
+  arr <- note (Named "Failed to decode ABI as Array type." $ UnexpectedValue json) $ A.toArray json
+  pure $ mapWithIndex safeDecode arr
+  where
+  safeDecode idx json' = decodeJson json' # lmap \error -> AbiDecodeError { idx, error }

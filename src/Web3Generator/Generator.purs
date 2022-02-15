@@ -2,14 +2,12 @@ module Web3Generator.Generator where
 
 import Prelude
 
-import Web3Generator.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
+import Web3Generator.AbiParser (AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
-import Data.Identity (Identity(..))
 import Data.List (uncons) as List
 import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..), fromJust)
-import Data.Newtype (un)
 import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
@@ -28,9 +26,6 @@ import PureScript.CST.Types as CST
 type CodeOptions =
   { exprPrefix :: String
   }
-
-class Code a m where
-  genCode :: a -> CodeOptions -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
 
 --------------------------------------------------------------------------------
 -- | Utils
@@ -102,7 +97,7 @@ toPSType s = unsafePartial case s of
 --------------------------------------------------------------------------------
 
 -- | Data declaration
-data FunData =
+newtype FunData =
   FunData
     { signature :: String
     , factorTypes :: Array (Tuple String (CST.Type Void))
@@ -384,21 +379,31 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
     mkSend helperName [ txOpts, hexString ]
   else mkSend helperName [ txOpts ]
   where
-  -- NOTE: there is a lot of c/p between mkSend and mkCall but they ways in which they are different is just
+  -- NOTE: there is a lot of c/p between mkSend and mkCall but the ways in which they are different is just
   -- flat out annoying
   mkSend helperName args = unsafePartial do
     let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + length args))
+
+    tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
+    tupleC <- do
+      let tupleType = "Tuple" <> show (length f.factorTypes)
+      Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
+    TidyM.importOpen "Prelude"
+    let idents = map Gen.exprIdent vars
+    let SolidityFunction { isUnCurried } = f.solidityFunction
+    firstFactor' <-
+      if isUnCurried then tagInput firstFactor
+      else pure $ snd firstFactor
+    restFactors' <- for restFactors $ \factor ->
+      if isUnCurried then tagInput factor
+      else pure $ snd factor
+
     expr <- do
       let SolidityFunction { isConstructor } = f.solidityFunction
       sendTx <-
         if isConstructor then Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
         else Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- do
-        let tupleType = "Tuple" <> show (length f.factorTypes)
-        Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
-      let idents = map Gen.exprIdent vars
-      TidyM.importOpen "Prelude"
+
       pure $ Gen.exprApp sendTx
         ( Array.take (length args) idents `snoc`
             Gen.exprTyped
@@ -408,14 +413,6 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
               )
               (Gen.typeCtor f.typeName)
         )
-
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    firstFactor' <-
-      if isUnCurried then tagInput firstFactor
-      else pure $ snd firstFactor
-    restFactors' <- for restFactors $ \factor ->
-      if isUnCurried then tagInput factor
-      else pure $ snd factor
     pure
       [ Gen.letSignature helperName $ Gen.typeArrow (args <> (firstFactor' : restFactors')) f.returnType
       , Gen.letValue helperName (map Gen.binderVar vars) expr
@@ -425,15 +422,25 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
     chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
     -- the 3 comes from TxOpts -> ChainCursor -> firstFactor -> restFactors ->  returnType
     let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + 2))
+
+    tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
+    tupleC <- do
+      let tupleType = "Tuple" <> show (length f.factorTypes)
+      Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
+    TidyM.importOpen "Prelude"
+    let idents = map Gen.exprIdent vars
+    let SolidityFunction { isUnCurried } = f.solidityFunction
+    firstFactor' <-
+      if isUnCurried then tagInput firstFactor
+      else pure $ snd firstFactor
+    restFactors' <- for restFactors $ \factor ->
+      if isUnCurried then tagInput factor
+      else pure $ snd factor
+
     expr <- do
       call <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "call")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- do
-        let tupleType = "Tuple" <> show (length f.factorTypes)
-        Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
-      TidyM.importOpen "Prelude"
+
       let
-        idents = map Gen.exprIdent vars
         SolidityFunction { outputs } = f.solidityFunction
         callExpr = Gen.exprApp call
           [ unsafePartial $ unsafeIndex idents 0
@@ -452,13 +459,6 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
             [ Gen.binaryOp "<$>" callExpr
             ]
       else pure callExpr
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    firstFactor' <-
-      if isUnCurried then tagInput firstFactor
-      else pure $ snd firstFactor
-    restFactors' <- for restFactors $ \factor ->
-      if isUnCurried then tagInput factor
-      else pure $ snd factor
     pure
       [ Gen.letSignature helperName $ Gen.typeArrow (txOpts : chainCursor : firstFactor' : restFactors') f.returnType
       , Gen.letValue helperName (map Gen.binderVar vars) expr
@@ -466,7 +466,7 @@ mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
 
 --------------------------------------------------------------------------------
 
-data EventData =
+newtype EventData =
   EventData
     { constructor :: String
     , indexedTypes :: Array (Tuple String (CST.Type Void))
@@ -624,33 +624,33 @@ eventDecls (EventData decl) = unsafePartial do
 
 --------------------------------------------------------------------------------
 
-instance Monad m => Code (Abi Identity) m where
-  genCode (Abi abi) opts = do
-    codes <- for abi $ un Identity >>> case _ of
-      AbiFunction f -> codegenFunction f
-      AbiEvent e -> mkEventData e >>= eventDecls
-      AbiConstructor (SolidityConstructor c) ->
-        let
-          f = SolidityFunction
-            { name: "constructor"
-            , inputs: c.inputs
-            , outputs: []
-            , constant: false
-            , payable: false
-            , isConstructor: true
-            , isUnCurried: c.isUnCurried
-            }
-        in
-          codegenFunction f
-      AbiFallback _ -> pure []
-      AbiReceive _ -> pure []
-    pure $ concat codes
-    where
-    codegenFunction f = do
-      funData <- makeFunData opts f
-      syn <- funTypeSyn funData
-      fun <- mkFunction funData
-      pure $ syn : fun
+genCode :: forall m . Monad m => Array AbiType -> CodeOptions -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
+genCode abi opts = do
+  codes <- for abi case _ of
+    AbiFunction f -> codegenFunction f
+    AbiEvent e -> mkEventData e >>= eventDecls
+    AbiConstructor (SolidityConstructor c) ->
+      let
+        f = SolidityFunction
+          { name: "constructor"
+          , inputs: c.inputs
+          , outputs: []
+          , constant: false
+          , payable: false
+          , isConstructor: true
+          , isUnCurried: c.isUnCurried
+          }
+      in
+        codegenFunction f
+    AbiFallback _ -> pure []
+    AbiReceive _ -> pure []
+  pure $ concat codes
+  where
+  codegenFunction f = do
+    funData <- makeFunData opts f
+    syn <- funTypeSyn funData
+    fun <- mkFunction funData
+    pure $ syn : fun
 
 --------------------------------------------------------------------------------
 

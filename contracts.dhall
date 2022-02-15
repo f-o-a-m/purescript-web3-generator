@@ -1,11 +1,10 @@
 let conf = ./spago.dhall
 
 in    conf
-    ⫽ { sources = conf.sources # [ "test/**/*.purs"  ]
+    ⫽ { sources = conf.sources # [ "contracts/**/*.purs"  ]
       , dependencies =
             conf.dependencies
-          # [ "spec"
-            , "arrays"
+          # [ "arrays"
             , "aff"
             , "control"
             , "argonaut-codecs"
@@ -25,8 +24,10 @@ in    conf
             , "partial"
             , "profunctor-lenses"
             , "strings"
+            , "tagged"
             , "transformers"
             , "tuples"
             , "web3"
+            , "newtype"
             ]
       }

@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build": "spago build",
-    "test": "rm -rf contracts; spago -x test.dhall test; spago -x test.dhall build",
+    "test": "rm -rf contracts; spago -x test.dhall test; spago -x contracts.dhall build",
     "format": "purs-tidy format-in-place src test",
     "check": "purs-tidy check src test bench parse-package-set"
   },

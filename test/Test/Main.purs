@@ -6,7 +6,7 @@ import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
-import Web3Generator.AbiParser (AbiWithErrors, SolidityType(..), parseSolidityType')
+import Web3Generator.AbiParser (SolidityType(..), AbiDecodeError, AbiType, parseSolidityType')
 import Data.Argonaut.Parser (jsonParser)
 import Data.Array (null)
 import Web3Generator.CodeGen (generatePS, parseAbi)
@@ -46,7 +46,7 @@ simpleStorageParserSpec =
     it "can parse the simple storage abi" do
       ejson <- jsonParser <$> readTextFile UTF8 "./abi-data/truffle/build/contracts/SimpleStorage.json"
       json <- either (throwError <<< error) pure ejson
-      let (eabi :: Either String AbiWithErrors) = parseAbi { truffle: true } json
+      let (eabi :: Either String (Array (Either AbiDecodeError AbiType))) = parseAbi { truffle: true } json
       -- Note: we could check if there are errors in `AbiWithErrors`,
       -- but it will be checked as part of `generatePS` tests later.
       isRight eabi `shouldEqual` true

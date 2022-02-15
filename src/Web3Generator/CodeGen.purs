@@ -8,7 +8,7 @@ import Control.Error.Util (note)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
-import Data.Argonaut (Json, JsonDecodeError, decodeJson, printJsonDecodeError)
+import Data.Argonaut (Json, JsonDecodeError, printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, null)
@@ -16,12 +16,10 @@ import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (for_)
-import Data.Identity (Identity(..))
 import Data.Lens ((^?))
 import Data.Lens.Index (ix)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
-import Data.Newtype (un)
 import Data.String (Pattern(..), Replacement(..), replaceAll, stripPrefix)
 import Data.Traversable (for, traverse_)
 import Data.Tuple (Tuple(..))
@@ -38,7 +36,7 @@ import Node.Path (FilePath, basenameWithoutExt, extname)
 import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import Web3Generator.AbiParser (Abi(..), AbiDecodeError(..), AbiWithErrors, AbiType(..), SolidityFunction(..))
+import Web3Generator.AbiParser (AbiDecodeError(..), AbiType(..), SolidityFunction(..), decodeArrayOfAbiTipes)
 import Web3Generator.Generator (genCode)
 
 type GeneratorOptions =
@@ -87,13 +85,13 @@ newtype ABIError = ABIError
 instance showABIError :: Show ABIError where
   show (ABIError r) = "(ABIError " <> show r <> ")"
 
-generateCodeFromAbi :: GeneratorOptions -> Abi Identity -> FilePath -> String
-generateCodeFromAbi opts (Abi abi) destFile = unsafePartial $
+generateCodeFromAbi :: GeneratorOptions -> Array AbiType -> FilePath -> String
+generateCodeFromAbi opts abi destFile = unsafePartial $
   let
-    abi' = map Identity $ maybeAnnotateArity $ un Identity <$> abi
+    abi' = maybeAnnotateArity abi
     moduleName = opts.modulePrefix <> "." <> basenameWithoutExt destFile ".purs"
     _module = TidyM.codegenModule moduleName $ do
-      declarations <- genCode (Abi abi') { exprPrefix: opts.exprPrefix }
+      declarations <- genCode abi' { exprPrefix: opts.exprPrefix }
       traverse_ TidyM.write declarations
   in
     Gen.printModule _module
@@ -110,13 +108,13 @@ writeCodeFromAbi
 writeCodeFromAbi opts abiPath destFile = do
   ejson <- jsonParser <$> liftAff (readTextFile UTF8 abiPath)
   json <- either (liftAff <<< throwError <<< error) pure ejson
-  (Abi abiWithErrors) <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
+  abiWithErrors <- either (liftAff <<< throwError <<< error) pure $ parseAbi opts json
   abiUnAnn <- for abiWithErrors case _ of
     Left (AbiDecodeError err) -> do
       tell [ ABIError { abiPath, error: err.error, idx: err.idx } ]
       pure Nothing
-    Right res -> pure $ Just $ Identity res
-  let code = generateCodeFromAbi opts (Abi $ catMaybes abiUnAnn) destFile
+    Right res -> pure $ Just res
+  let code = generateCodeFromAbi opts (catMaybes abiUnAnn) destFile
   liftAff $ writeTextFile UTF8 destFile code
 
 maybeAnnotateArity :: Array AbiType -> Array AbiType
@@ -135,14 +133,14 @@ maybeAnnotateArity abi =
   go :: SolidityFunction -> SolidityFunction
   go (SolidityFunction f) = SolidityFunction f { name = f.name <> show (length f.inputs) }
 
-parseAbi :: forall r. { truffle :: Boolean | r } -> Json -> Either String AbiWithErrors
+parseAbi :: forall r. { truffle :: Boolean | r } -> Json -> Either String (Array (Either AbiDecodeError AbiType))
 parseAbi { truffle } abiJson = case truffle of
-  false -> lmap printJsonDecodeError $ decodeJson abiJson
+  false -> lmap printJsonDecodeError $ decodeArrayOfAbiTipes abiJson
   true ->
     let
       mabi = abiJson ^? _Object <<< ix "abi"
     in
-      note "truffle artifact missing abi field" mabi >>= \json -> lmap printJsonDecodeError $ decodeJson json
+      note "truffle artifact missing abi field" mabi >>= \json -> lmap printJsonDecodeError $ decodeArrayOfAbiTipes json
 
 --------------------------------------------------------------------------------
 -- | Helpers
