@@ -108,7 +108,7 @@ let additions =
             "https://github.com/natefaubion/purescript-tidy.git"
         , version = "v0.5.3"
         }
-      , language-cst-codegen =
+      , tidy-codegen =
         { dependencies =
           [ "aff"
           , "ansi"

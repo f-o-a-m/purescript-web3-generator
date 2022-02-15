@@ -22,7 +22,7 @@
   , "lists"
   , "maybe"
   , "language-cst-parser"
-  , "language-cst-codegen"
+  , "tidy-codegen"
   , "open-mkdirp-aff"
   , "newtype"
   , "node-buffer"

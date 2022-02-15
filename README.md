@@ -37,7 +37,7 @@ import Data.GeneratorMain (generatorMain)
 main = generatorMain
 ```
 
-2. From there, add a build step 
+2. From there, add a build step
 
 ```sh
 

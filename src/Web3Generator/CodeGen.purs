@@ -9,7 +9,6 @@ import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
 import Data.Argonaut (Json, JsonDecodeError, decodeJson, printJsonDecodeError)
-import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, null)
@@ -94,7 +93,7 @@ generateCodeFromAbi opts (Abi abi) destFile = unsafePartial $
     abi' = map Identity $ maybeAnnotateArity $ un Identity <$> abi
     moduleName = opts.modulePrefix <> "." <> basenameWithoutExt destFile ".purs"
     _module = TidyM.codegenModule moduleName $ do
-      declarations <- genCode (Abi $ abi') { exprPrefix: opts.exprPrefix }
+      declarations <- genCode (Abi abi') { exprPrefix: opts.exprPrefix }
       traverse_ TidyM.write declarations
   in
     Gen.printModule _module
