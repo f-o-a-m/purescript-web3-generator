@@ -47,7 +47,7 @@ type GeneratorOptions =
   , modulePrefix :: String
   }
 
-generatePS :: GeneratorOptions -> Aff ABIErrors
+generatePS :: GeneratorOptions -> Aff (Array ABIError)
 generatePS os = do
   let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
   fs <- getAllJsonFiles opts.jsonDir
@@ -74,8 +74,6 @@ generatePS os = do
   genPSFileName :: GeneratorOptions -> FilePath -> FilePath
   genPSFileName opts fp = opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 
-type ABIErrors = Array ABIError
-
 newtype ABIError = ABIError
   { abiPath :: FilePath
   , idx :: Int
@@ -100,7 +98,7 @@ generateCodeFromAbi opts abi destFile = unsafePartial $
 writeCodeFromAbi
   :: forall m
    . MonadAff m
-  => MonadTell ABIErrors m
+  => MonadTell (Array ABIError) m
   => GeneratorOptions
   -> FilePath
   -> FilePath
