@@ -36,6 +36,10 @@ simpleStorageParserSpec =
         Right (SolidityArray $ SolidityVector (pure top <> pure 12) (SolidityBytesN 32))
       parseSolidityType' "bytes32[1asd][]" `shouldEqual`
         Left "Failed to parse SolidityType \"bytes32[1asd][]\" with error: { error: \"Could not match character ']'\", pos: 9 }"
+      -- int top + 1
+      parseSolidityType' "bytes32[2147483648][12][]" `shouldEqual`
+        Left "Failed to parse SolidityType \"bytes32[2147483648][12][]\" with error: { error: \"Couldn't parse as Int : 2147483648\", pos: 18 }"
+      -- "int top" <> "1"
       parseSolidityType' "bytes32[21474836471][12][]" `shouldEqual`
         Left "Failed to parse SolidityType \"bytes32[21474836471][12][]\" with error: { error: \"Couldn't parse as Int : 21474836471\", pos: 19 }"
       parseSolidityType' "bytes999[]" `shouldEqual`

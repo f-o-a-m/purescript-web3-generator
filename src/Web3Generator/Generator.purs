@@ -84,15 +84,15 @@ toPSType s = unsafePartial case s of
             pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
 
   expandVector (List.NonEmptyList (n :| ns)) a = unsafePartial do
-    l <- makeDigits n
+    n' <- makeDigits n
     vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
     case List.uncons ns of
       Nothing -> do
-        x <- toPSType a
-        pure $ Gen.typeApp vector [ l, x ]
+        a' <- toPSType a
+        pure $ Gen.typeApp vector [ n', a' ]
       Just { head, tail } -> do
-        x <- expandVector (List.NonEmptyList $ head :| tail) a
-        pure $ Gen.typeApp vector [ l, x ]
+        nsa' <- expandVector (List.NonEmptyList $ head :| tail) a
+        pure $ Gen.typeApp vector [ n', nsa' ]
 
 --------------------------------------------------------------------------------
 
