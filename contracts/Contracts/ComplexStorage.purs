@@ -151,7 +151,7 @@ type SetValuesFn = Tagged
       (Tagged (Proxy "_stringVal") String)
       (Tagged (Proxy "_bytes16Val") (BytesN (D1 :& DOne D6)))
       ( Tagged (Proxy "_bytes2VectorListVal")
-          (Array (Vector (DOne D4) (Vector (DOne D3) (BytesN (DOne D2)))))
+          (Array (Vector (DOne D3) (Vector (DOne D4) (BytesN (DOne D2)))))
       )
   )
 
@@ -165,7 +165,7 @@ setValues
      , _intListVal :: Array (IntN (D2 :& D5 :& DOne D6))
      , _stringVal :: String
      , _bytes16Val :: BytesN (D1 :& DOne D6)
-     , _bytes2VectorListVal :: Array (Vector (DOne D4) (Vector (DOne D3) (BytesN (DOne D2))))
+     , _bytes2VectorListVal :: Array (Vector (DOne D3) (Vector (DOne D4) (BytesN (DOne D2))))
      }
   -> Web3 HexString
 setValues x1 x2 = uncurryFields x2 $ setValues' x1
@@ -181,7 +181,7 @@ setValues x1 x2 = uncurryFields x2 $ setValues' x1
     -> Tagged (Proxy "_stringVal") String
     -> Tagged (Proxy "_bytes16Val") (BytesN (D1 :& DOne D6))
     -> Tagged (Proxy "_bytes2VectorListVal")
-         (Array (Vector (DOne D4) (Vector (DOne D3) (BytesN (DOne D2)))))
+         (Array (Vector (DOne D3) (Vector (DOne D4) (BytesN (DOne D2)))))
     -> Web3 HexString
   setValues' _x1 _x2 _x3 _x4 _x5 _x6 _x7 _x8 _x9 _x10 = sendTx _x1
     (tagged $ Tuple9 _x2 _x3 _x4 _x5 _x6 _x7 _x8 _x9 _x10 :: SetValuesFn)

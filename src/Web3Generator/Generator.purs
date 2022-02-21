@@ -2,24 +2,25 @@ module Web3Generator.Generator where
 
 import Prelude
 
-import Web3Generator.AbiParser (AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
 import Data.List (uncons) as List
+import Data.List.NonEmpty (reverse)
 import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..), fromJust)
 import Data.NonEmpty ((:|))
-import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
+import Data.String.CodeUnits (toCharArray, singleton)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), snd)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import PureScript.CST.Types as CST
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import PureScript.CST.Types as CST
+import Web3Generator.AbiParser (AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
 
 --------------------------------------------------------------------------------
 
@@ -53,7 +54,7 @@ toPSType s = unsafePartial case s of
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ digits ]
   SolidityBytesD ->
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  SolidityVector ns a -> expandVector ns a
+  SolidityVector ns a -> expandVector (reverse ns) a
   SolidityArray a -> do
     t <- toPSType a
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
