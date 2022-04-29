@@ -1,7 +1,7 @@
 let conf = ./spago.dhall
 
 in    conf
-    ⫽ { sources = conf.sources # [ "test/**/*.purs" ]
+    ⫽ { sources = conf.sources # [ "test/**/*.purs", "contracts/**/*.purs"  ]
       , dependencies =
             conf.dependencies
           # [ "spec"
@@ -27,7 +27,9 @@ in    conf
             , "partial"
             , "profunctor-lenses"
             , "strings"
+            , "tagged"
             , "transformers"
             , "tuples"
+            , "web3"
             ]
       }

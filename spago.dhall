@@ -25,6 +25,8 @@ You can edit this file as you like.
   , "integers"
   , "lists"
   , "maybe"
+  , "language-cst-parser"
+  , "language-cst-codegen"
   , "mkdirp"
   , "newtype"
   , "node-buffer"

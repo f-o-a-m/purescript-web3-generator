@@ -6,6 +6,7 @@ install:
   - npm install
 script:
   - npm run -s build
+  - npm run check
   - npm -s test
 after_success:
 - >-
