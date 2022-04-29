@@ -31,7 +31,7 @@ let additions =
           , "variant"
           ]
         , repo = "https://github.com/f-o-a-m/purescript-web3"
-        , version = "take-bytes"
+        , version = "v5.0.0"
         }
       , eth-core =
         { dependencies =
@@ -51,7 +51,7 @@ let additions =
         , repo =
             "https://github.com/f-o-a-m/purescript-eth-core.git"
         , version =
-            "even-hexstrings"
+            "v8.0.0"
         }
       , coroutine-transducers =
         { dependencies =
