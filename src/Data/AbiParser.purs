@@ -130,28 +130,27 @@ instance eqArrayType :: Eq ArrayType where
   eq x = genericEq x
 
 parseArrayType :: Parser ArrayType
-parseArrayType = do 
-  let dynamic = do 
-        _ <- string "[]"
-        pure Dynamic
-      fixedLength = do 
-        _ <- char '['
-        n <- parseDigits >>= asInt
-        _ <- char ']'
-        pure $ FixedLength n
+parseArrayType = do
+  let
+    dynamic = do
+      _ <- string "[]"
+      pure Dynamic
+    fixedLength = do
+      _ <- char '['
+      n <- parseDigits >>= asInt
+      _ <- char ']'
+      pure $ FixedLength n
   dynamic <|> fixedLength
-
 
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
   t <- solidityBasicTypeParser
   arrayTypes <- reverse <$> manyTill parseArrayType eof
-  let f at acc = case at of
-          Dynamic -> SolidityArray acc
-          FixedLength n -> SolidityVector n acc
+  let
+    f at acc = case at of
+      Dynamic -> SolidityArray acc
+      FixedLength n -> SolidityVector n acc
   pure $ foldr f t arrayTypes
-        
-        
 
 parseSolidityType :: String -> Either JsonDecodeError SolidityType
 parseSolidityType s = parseSolidityType' s # lmap \err -> Named err $ UnexpectedValue (encodeJson s)
