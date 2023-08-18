@@ -13,13 +13,14 @@ import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (all, foldMap)
+import Data.Foldable (all, foldMap, foldr)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Eq.Generic (genericEq)
 import Data.Show.Generic (genericShow)
 import Data.Int (fromString)
-import Data.List.Types (List(..), NonEmptyList(..))
+import Data.List (reverse)
+import Data.List.Types (List(..))
 import Data.Maybe (Maybe(..))
 import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (fromCharArray)
@@ -45,7 +46,7 @@ data SolidityType
   | SolidityString
   | SolidityBytesN Int
   | SolidityBytesD
-  | SolidityVector (NonEmptyList Int) SolidityType
+  | SolidityVector Int SolidityType
   | SolidityArray SolidityType
 
 derive instance genericSolidityType :: Generic SolidityType _
@@ -65,7 +66,7 @@ instance formatSolidityType :: Format SolidityType where
     SolidityString -> "string"
     SolidityBytesN n -> "bytes" <> show n
     SolidityBytesD -> "bytes"
-    SolidityVector ns a -> format a <> foldMap (\n -> "[" <> show n <> "]") ns
+    SolidityVector n a -> format a <> "[" <> show n <> "]"
     SolidityArray a -> format a <> "[]"
 
 parseUint :: Parser SolidityType
@@ -120,20 +121,39 @@ solidityBasicTypeParser =
     , parseAddress
     ]
 
-vectoDimentionsParser :: Parser (List Int)
-vectoDimentionsParser = manyTill
-  (char '[' *> (parseDigits >>= asInt) <* char ']')
-  (lookAhead $ void (string "[]") <|> eof)
+data ArrayType = Dynamic | FixedLength Int
+
+derive instance genericArrayType :: Generic ArrayType _
+
+instance showArrayType :: Show ArrayType where
+  show x = genericShow x
+
+instance eqArrayType :: Eq ArrayType where
+  eq x = genericEq x
+
+parseArrayType :: Parser ArrayType
+parseArrayType = do 
+  let dynamic = do 
+        _ <- string "[]"
+        pure Dynamic
+      fixedLength = do 
+        _ <- char '['
+        n <- parseDigits >>= asInt
+        _ <- char ']'
+        pure $ FixedLength n
+  dynamic <|> fixedLength
+
 
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
   t <- solidityBasicTypeParser
-  mbVectorDims <- vectoDimentionsParser
-  let
-    t' = case mbVectorDims of
-      Nil -> t
-      Cons n ns -> SolidityVector (NonEmptyList $ n :| ns) t
-  (SolidityArray t' <$ string "[]") <|> pure t'
+  arrayTypes <- reverse <$> manyTill parseArrayType eof
+  let f at acc = case at of
+          Dynamic -> SolidityArray acc
+          FixedLength n -> SolidityVector n acc
+  pure $ foldr f t arrayTypes
+        
+        
 
 parseSolidityType :: String -> Either JsonDecodeError SolidityType
 parseSolidityType s = parseSolidityType' s # lmap \err -> Named err $ UnexpectedValue (encodeJson s)

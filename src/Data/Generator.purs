@@ -58,7 +58,7 @@ toPSType s = unsafePartial case s of
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ digits ]
   SolidityBytesD ->
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  SolidityVector ns a -> expandVector ns a
+  SolidityVector n a -> mkVector n a
   SolidityArray a -> do
     t <- toPSType a
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
@@ -88,16 +88,11 @@ toPSType s = unsafePartial case s of
             let allRestDigits = map (Gen.binaryOp digitAnd) (snoc tailDs dType)
             pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
 
-  expandVector (List.NonEmptyList (n :| ns)) a = unsafePartial do
+  mkVector n a = unsafePartial do
     l <- makeDigits n
     vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
-    case List.uncons ns of
-      Nothing -> do
-        x <- toPSType a
-        pure $ Gen.typeApp vector [ l, x ]
-      Just { head, tail } -> do
-        x <- expandVector (List.NonEmptyList $ head :| tail) a
-        pure $ Gen.typeApp vector [ l, x ]
+    x <- toPSType a
+    pure $ Gen.typeApp vector [ l, x ]
 
 --------------------------------------------------------------------------------
 
