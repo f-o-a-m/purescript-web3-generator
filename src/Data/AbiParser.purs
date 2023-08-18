@@ -342,6 +342,7 @@ data AbiType
   | AbiConstructor SolidityConstructor
   | AbiEvent SolidityEvent
   | AbiFallback SolidityFallback
+  | Unknown
 
 derive instance genericAbiType :: Generic AbiType _
 
@@ -358,7 +359,7 @@ instance decodeJsonAbiType :: DecodeJson AbiType where
       "constructor" -> AbiConstructor <$> decodeJson json'
       "event" -> AbiEvent <$> decodeJson json'
       "fallback" -> AbiFallback <$> decodeJson json'
-      _ -> Left $ Named "Unkown abi type" $ UnexpectedValue json
+      _ -> pure Unknown
 
 newtype Abi f = Abi (Array (f AbiType))
 
