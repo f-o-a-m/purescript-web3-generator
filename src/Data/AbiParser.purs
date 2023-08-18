@@ -13,21 +13,19 @@ import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, null)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (all, foldMap, foldr)
+import Data.Foldable (all, foldr)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Eq.Generic (genericEq)
 import Data.Show.Generic (genericShow)
 import Data.Int (fromString)
 import Data.List (reverse)
-import Data.List.Types (List(..))
 import Data.Maybe (Maybe(..))
-import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import Text.Parsing.StringParser (Parser, fail, runParser, try)
 import Text.Parsing.StringParser.CodePoints (anyDigit, string, char, eof)
-import Text.Parsing.StringParser.Combinators (choice, lookAhead, manyTill, many1, optionMaybe)
+import Text.Parsing.StringParser.Combinators (choice, manyTill, many1, optionMaybe)
 
 --------------------------------------------------------------------------------
 

@@ -6,11 +6,8 @@ import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityV
 import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
 import Data.Identity (Identity(..))
-import Data.List (uncons) as List
-import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
-import Data.NonEmpty ((:|))
 import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
