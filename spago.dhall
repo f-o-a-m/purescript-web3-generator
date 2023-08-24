@@ -44,7 +44,7 @@ You can edit this file as you like.
   , "transformers"
   , "tuples"
   , "web3"
-  , "yargs"
+  , "optparse"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
