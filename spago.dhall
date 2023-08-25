@@ -35,16 +35,15 @@ You can edit this file as you like.
   , "node-path"
   , "nonempty"
   , "ordered-collections"
+  , "optparse"
   , "partial"
   , "prelude"
   , "profunctor-lenses"
-  , "psci-support"
   , "string-parsers"
   , "strings"
   , "transformers"
   , "tuples"
   , "web3"
-  , "yargs"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
