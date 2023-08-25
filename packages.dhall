@@ -31,49 +31,70 @@ let additions =
       , web3 =
         { dependencies =
           [ "aff"
-          , "avar"
-          , "console"
           , "coroutines"
           , "coroutine-transducers"
-          , "debug"
           , "effect"
           , "errors"
           , "eth-core"
           , "foreign"
           , "fork"
-          , "free"
           , "heterogeneous"
-          , "identity"
           , "parsing"
           , "partial"
           , "profunctor-lenses"
-          , "psci-support"
           , "tagged"
           , "transformers"
           , "typelevel-prelude"
           , "variant"
+          , "argonaut"
+          , "argonaut-generic"
+          , "arrays"
+          , "bifunctors"
+          , "bytestrings"
+          , "control"
+          , "either"
+          , "exceptions"
+          , "foldable-traversable"
+          , "foreign-object"
+          , "integers"
+          , "maybe"
+          , "newtype"
+          , "parallel"
+          , "prelude"
+          , "record"
+          , "ring-modules"
+          , "simple-json"
+          , "strings"
+          , "tailrec"
+          , "tuples"
+          , "unfoldable"
           ]
         , repo = "https://github.com/f-o-a-m/purescript-web3"
-        , version = "v5.0.0"
+        , version = "dd47c28a3b8adc0167e43615f2ac27f48f23e59b"
         }
       , eth-core =
         { dependencies =
-            [ "argonaut"
-            , "bytestrings"
-            , "console"
-            , "debug"
-            , "effect"
-            , "ordered-collections"
-            , "parsing"
-            , "prelude"
-            , "psci-support"
-            , "ring-modules"
-            , "simple-json"
-            ]
-        , repo =
-            "https://github.com/f-o-a-m/purescript-eth-core.git"
-        , version =
-            "v8.0.0"
+          [ "argonaut"
+          , "arrays"
+          , "bytestrings"
+          , "effect"
+          , "either"
+          , "foreign"
+          , "functions"
+          , "integers"
+          , "maybe"
+          , "node-buffer"
+          , "ordered-collections"
+          , "partial"
+          , "prelude"
+          , "quotient"
+          , "ring-modules"
+          , "simple-json"
+          , "strings"
+          , "unsafe-coerce"
+          ]
+        , repo = "https://github.com/f-o-a-m/purescript-eth-core.git"
+        , version = "b35eec551db445cb6a3577eaea3fe7a3bc052472"
         }
       , coroutine-transducers =
         { dependencies =
@@ -105,20 +126,18 @@ let additions =
         }
       , mkdirp =
         { dependencies =
-            [ "console"
-            , "effect"
+            [ "effect"
             , "either"
             , "exceptions"
             , "functions"
             , "node-fs"
             , "nullable"
             , "prelude"
-            , "psci-support"
             ]
         , repo =
             "https://github.com/f-o-a-m/purescript-mkdirp"
         , version =
-            "v1.0.0"
+            "04f508dff451289c6b7d5de9e55148e83aa68a8a"
         }
       , tagged =
         { dependencies =

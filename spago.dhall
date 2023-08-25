@@ -38,7 +38,6 @@ You can edit this file as you like.
   , "partial"
   , "prelude"
   , "profunctor-lenses"
-  , "psci-support"
   , "string-parsers"
   , "strings"
   , "transformers"
