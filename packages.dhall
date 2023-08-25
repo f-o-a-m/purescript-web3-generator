@@ -137,7 +137,7 @@ let additions =
         , repo =
             "https://github.com/f-o-a-m/purescript-mkdirp"
         , version =
-            "18aa3cf3cfc2d26724a60fe9de8798d3371b3937"
+            "v2.0.0"
         }
       , tagged =
         { dependencies =
