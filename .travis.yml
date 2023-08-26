@@ -6,8 +6,8 @@ install:
   - npm install
 script:
   - npm run -s build
-  - npm run check
   - npm -s test
+  - npm run tidy-check
 after_success:
 - >-
   test $TRAVIS_TAG &&
