@@ -2,35 +2,72 @@ module Data.GeneratorMain where
 
 import Prelude
 
-import Effect.Aff (launchAff_)
+import Data.Array (fold)
+import Data.Array (null) as A
+import Data.CodeGen (GeneratorOptions, generatePS)
 import Effect (Effect)
-import Data.CodeGen (generatePS)
-import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
+import Effect.Aff (launchAff_)
+import Effect.Class (liftEffect)
+import Node.Process (exit)
+import Options.Applicative (Parser, ParserInfo, boolean, execParser, fullDesc, header, help, helper, info, long, metavar, option, progDesc, showDefault, strOption, value, (<**>))
+
+data Args = Args GeneratorOptions
+
+argsParser :: Parser Args
+argsParser = ado
+  jsonDir <-
+    ( strOption $ fold
+        [ long "abis"
+        , metavar "ABIS"
+        , showDefault
+        , help "The abi source directory."
+        ]
+    )
+  pursDir <-
+    ( strOption $ fold
+        [ long "dest"
+        , metavar "DEST"
+        , value "./src"
+        , showDefault
+        , help "The destination directory for purescript code."
+        ]
+    )
+  exprPrefix <-
+    ( strOption $ fold
+        [ long "prefix"
+        , metavar "PREFIX"
+        , value ""
+        , help "The expression prefix for the generated purescript code (used to get around solidity identifiers that generate invalide Purescript)."
+        ]
+    )
+  modulePrefix <-
+    ( strOption $ fold
+        [ long "module"
+        , metavar "MODULE"
+        , value "Contracts"
+        , help "The module name prefix for the generated purescript code."
+        ]
+    )
+  truffle <-
+    ( option boolean $ fold
+        [ long "truffle"
+        , metavar "TRUFFLE"
+        , help "Are the abi files truffle artifacts"
+        , value false
+        ]
+    )
+  in Args { jsonDir, pursDir, truffle, exprPrefix, modulePrefix }
 
 generatorMain :: Effect Unit
-generatorMain = do
-  pure unit
-  -- conf <- runY setup mkConf
-  -- launchAff_ $ generatePS conf
-  -- where
-  -- setup =
-  --   usage "$0 --abis <abis> --dest <dest> ./src --prefix <prefix> --module <module> --truffle <bool>"
-  --     <> example "$0 --abis ./contract-abis --dest ./src --prefix eth_ --module MyApp.Contracts --truffle false " "Generate contract code from solidity compiler output in current directory with prefix `eth_` into the `src/MyApp/Contracts/` directory with module name `Myapp.Contracts.*`"
-  --     <> defaultVersion
-  --     <> defaultHelp
-  -- mkConf =
-  --   mkConf'
-  --     <$> yarg "abis" [] Nothing (Right "Must specify abi source directory.") true
-  --     <*> yarg "dest" [] Nothing (Left "./src") false
-  --     <*> yarg "prefix" [] Nothing (Left "") false
-  --     <*> yarg "module" [] Nothing (Left "Contracts") false
-  --     <*> flag "truffle" [] (Just "Are the abi files truffle artifacts")
-  -- mkConf' jsonDir pursDir exprPrefix modulePrefix truffle = pure
-  --   { jsonDir
-  --   , pursDir
-  --   , exprPrefix
-  --   , modulePrefix
-  --   , truffle
-  --   }
-
+generatorMain = launchAff_ do
+  (Args args) <- liftEffect $ execParser opts
+  errs <- generatePS args
+  when (A.null errs) $
+    liftEffect $ exit 1
+  where
+    opts :: ParserInfo Args
+    opts = info (argsParser <**> helper)
+      ( fullDesc
+          <> progDesc "Purescript Web3 Generator"
+          <> header "ps-web3-generator - generate Purescript bindings to your solidity contracts"
+      )

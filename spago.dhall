@@ -33,8 +33,10 @@ You can edit this file as you like.
   , "node-fs"
   , "node-fs-aff"
   , "node-path"
+  , "node-process"
   , "nonempty"
   , "ordered-collections"
+  , "optparse"
   , "partial"
   , "prelude"
   , "profunctor-lenses"
@@ -43,7 +45,6 @@ You can edit this file as you like.
   , "transformers"
   , "tuples"
   , "web3"
-  , "optparse"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]

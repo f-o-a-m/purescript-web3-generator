@@ -22,41 +22,7 @@ Generats purescript modules from Solidity ABIs
 
 ## How to use it
 
-For a complete example that follows the steps below, see [`purescript-web3-example`](https://github.com/f-o-a-m/purescript-web3-example).
-
-We use `purescript-web3-generator` in the absence of template-purescript. Suggested usage is as follows:
-
-1. Create a directory `generator/` in your project with a file that looks like this
-
-```purescript
-
-module Generator where
-
-import Data.GeneratorMain (generatorMain)
-
-main = generatorMain
-```
-
-2. From there, add a build step 
-
-```sh
-
-pulp run -m Generator --src-path generator -- --abis <abis> --dest src --module Contracts
-```
-
-(note that we specify both a different source directory than `src` and a different module `Generator` that `purs` is looking for `main` in)
-
-
-Until [this issue](https://github.com/purescript-contrib/pulp/issues/309) is fixed, we have to temporarily replace the step above with something like this
-
-```sh
-pulp build -m Generator --src-path generator --to generator.js
-node generator.js --abis <abis> --dest src --module Contracts
-rm generator.js
-```
-
-3. Now you should have created contract modules for each contract into your `src/Contracts` directory that your code can depend on.
-  you could use `--module MyApp.Contracts` for example too and it will result in modules created in `src/MyApp/Contracts`
+see the `example` directory in this repo.
 
 ## Documentation
 
