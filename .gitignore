@@ -9,3 +9,4 @@
 /contracts/
 package-lock.json
 /.spago/
+.vscode
