@@ -189,9 +189,9 @@ funTypeSyn (FunData decl) = unsafePartial do
   pure
     $ Gen.declType decl.typeName []
     $ Gen.typeApp tagged
-      [ Gen.typeApp proxy [ t ]
-      , Gen.typeApp tupleType ts
-      ]
+        [ Gen.typeApp proxy [ t ]
+        , Gen.typeApp tupleType ts
+        ]
 
 mkFunction
   :: forall m

@@ -62,12 +62,13 @@ generatorMain :: Effect Unit
 generatorMain = launchAff_ do
   (Args args) <- liftEffect $ execParser opts
   errs <- generatePS args
-  when (A.null errs) $
-    liftEffect $ exit 1
+  when (A.null errs)
+    $ liftEffect
+    $ exit 1
   where
-    opts :: ParserInfo Args
-    opts = info (argsParser <**> helper)
-      ( fullDesc
-          <> progDesc "Purescript Web3 Generator"
-          <> header "ps-web3-generator - generate Purescript bindings to your solidity contracts"
-      )
+  opts :: ParserInfo Args
+  opts = info (argsParser <**> helper)
+    ( fullDesc
+        <> progDesc "Purescript Web3 Generator"
+        <> header "ps-web3-generator - generate Purescript bindings to your solidity contracts"
+    )
