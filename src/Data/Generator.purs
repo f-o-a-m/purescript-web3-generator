@@ -6,11 +6,8 @@ import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityV
 import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
 import Data.Identity (Identity(..))
-import Data.List (uncons) as List
-import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
-import Data.NonEmpty ((:|))
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), snd)
@@ -54,22 +51,17 @@ toPSType s = unsafePartial case s of
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
   SolidityBytesD ->
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  SolidityVector ns a -> expandVector ns a
+  SolidityVector n a -> mkVector n a
   SolidityArray a -> do
     t <- toPSType a
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
 
   where
-  expandVector (List.NonEmptyList (n :| ns)) a = unsafePartial do
+  mkVector n a = unsafePartial do
     let l = Gen.typeInt n
     vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
-    case List.uncons ns of
-      Nothing -> do
-        x <- toPSType a
-        pure $ Gen.typeApp vector [ l, x ]
-      Just { head, tail } -> do
-        x <- expandVector (List.NonEmptyList $ head :| tail) a
-        pure $ Gen.typeApp vector [ l, x ]
+    x <- toPSType a
+    pure $ Gen.typeApp vector [ l, x ]
 
 --------------------------------------------------------------------------------
 
@@ -615,6 +607,7 @@ instance Monad m => Code (Abi Identity) m where
         in
           codegenFunction f
       AbiFallback _ -> pure []
+      Unknown -> pure []
     pure $ concat codes
     where
     codegenFunction f = do
