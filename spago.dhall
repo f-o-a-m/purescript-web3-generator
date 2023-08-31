@@ -26,7 +26,7 @@ You can edit this file as you like.
   , "lists"
   , "maybe"
   , "language-cst-parser"
-  , "language-cst-codegen"
+  , "tidy-codegen"
   , "mkdirp"
   , "newtype"
   , "node-buffer"

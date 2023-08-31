@@ -2,7 +2,10 @@ let upstream =
       https://github.com/purescript/package-sets/releases/download/psc-0.15.7-20230306/packages.dhall
         sha256:0757626c7422b8b5b5b1d0df3d3628e5deac755d7f89c433a9bf89009787dcbd
 
-let overrides = {=}
+let overrides =
+  { language-cst-parser =
+      (upstream.language-cst-parser with version = "v0.13.0")
+  }
 
 let additions =
       { bytestrings =
@@ -70,7 +73,8 @@ let additions =
           , "unfoldable"
           ]
         , repo = "https://github.com/f-o-a-m/purescript-web3"
-        , version = "dd47c28a3b8adc0167e43615f2ac27f48f23e59b"
+        , version = "f00f"
+        -- , version = "f19ed33bc25a6e1701801e3498f1636980cfb90f"
         }
       , eth-core =
         { dependencies =
@@ -160,34 +164,16 @@ let additions =
         , repo = "https://github.com/natefaubion/purescript-dodo-printer.git"
         , version = "v2.1.0"
         }
-      , language-cst-parser =
-        { dependencies =
-          [ "arrays"
-          , "const"
-          , "effect"
-          , "either"
-          , "foldable-traversable"
-          , "free"
-          , "functors"
-          , "maybe"
-          , "numbers"
-          , "ordered-collections"
-          , "strings"
-          , "transformers"
-          , "tuples"
-          , "typelevel-prelude"
-          ]
-        , repo =
-            "https://github.com/natefaubion/purescript-language-cst-parser.git"
-        , version = "v0.9.1"
-        }
       , tidy =
         { dependencies =
           [ "arrays"
+          , "control"
           , "dodo-printer"
+          , "either"
           , "foldable-traversable"
           , "lists"
           , "maybe"
+          , "newtype"
           , "ordered-collections"
           , "partial"
           , "prelude"
@@ -197,9 +183,9 @@ let additions =
           ]
         , repo =
             "https://github.com/natefaubion/purescript-tidy.git"
-        , version = "v0.5.3"
+        , version = "v0.10.0"
         }
-      , language-cst-codegen =
+      , tidy-codegen =
         { dependencies =
           [ "aff"
           , "ansi"
@@ -236,6 +222,7 @@ let additions =
           , "prelude"
           , "record"
           , "safe-coerce"
+          , "st"
           , "strings"
           , "tidy"
           , "transformers"
@@ -245,7 +232,7 @@ let additions =
           ]
         , repo =
             "https://github.com/natefaubion/purescript-tidy-codegen.git"
-        , version = "v1.1.1"
+        , version = "v4.0.0"
         }
       }
 
