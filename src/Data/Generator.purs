@@ -83,11 +83,7 @@ tagInput
   -> TidyM.CodegenT Void m (CST.Type Void)
 tagInput (Tuple name _type) = unsafePartial $ do
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
-  pure $ Gen.typeApp tagged
-    [ Gen.typeApp proxy [ Gen.typeString name ]
-    , _type
-    ]
+  pure $ Gen.typeApp tagged [ Gen.typeString name, _type ]
 
 makeFunData
   :: forall m
@@ -144,7 +140,6 @@ funTypeSyn (FunData decl) = unsafePartial do
     if isUnCurried then tagInput factor
     else pure $ snd factor
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
   t <-
     if isConstructor then do
       TidyM.importOpen "Prelude"
@@ -153,7 +148,7 @@ funTypeSyn (FunData decl) = unsafePartial do
   pure
     $ Gen.declType decl.typeName []
     $ Gen.typeApp tagged
-        [ Gen.typeApp proxy [ t ]
+        [ t
         , Gen.typeApp tupleType ts
         ]
 
@@ -499,9 +494,8 @@ eventDecls (EventData decl) = unsafePartial do
     let
       f (Tuple name ty) = do
         tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-        proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
         pure $ Gen.typeApp tagged
-          [ Gen.typeApp proxy [ Gen.typeString name ]
+          [ Gen.typeString name
           , ty
           ]
     indexedTypesTagged <- for decl.indexedTypes f
