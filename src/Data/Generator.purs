@@ -3,7 +3,7 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..))
+import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..))
 import Data.Array as Array
 import Data.Identity (Identity(..))
 import Data.List (uncons) as List
@@ -11,14 +11,13 @@ import Data.List.Types (NonEmptyList(..)) as List
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
 import Data.NonEmpty ((:|))
-import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), snd)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
 import PureScript.CST.Types as CST
@@ -44,18 +43,15 @@ toPSType s = unsafePartial case s of
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
   SolidityUint n -> do
     uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp uintN [ digits ]
+    pure $ Gen.typeApp uintN [ Gen.typeInt n ]
   SolidityInt n -> do
     intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp (Gen.typeCtor intN) [ digits ]
+    pure $ Gen.typeApp (Gen.typeCtor intN) [ Gen.typeInt n ]
   SolidityString -> do
     pure $ Gen.typeCtor "String"
   SolidityBytesN n -> do
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp (Gen.typeCtor bytesN) [ digits ]
+    pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
   SolidityBytesD ->
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
   SolidityVector ns a -> expandVector ns a
@@ -64,32 +60,8 @@ toPSType s = unsafePartial case s of
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
 
   where
-  makeDigits :: Int -> TidyM.CodegenT e m (CST.Type e)
-  makeDigits n = unsafePartial do
-    let
-      digits :: Array String
-      digits = map singleton <<< toCharArray <<< show $ n
-
-    case unsnoc digits of
-      Nothing -> unsafeCrashWith "impossible case reached in makeDigits"
-      Just { init, last } -> do
-        let mkD d = "D" <> d
-        lastD <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD last)
-        done <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "DOne")
-        let dType = Gen.typeApp (Gen.typeCtor done) [ Gen.typeCtor lastD ]
-        case uncons init of
-          Nothing -> pure dType
-          Just { head, tail } -> do
-            tailDs <- for tail $ \d -> do
-              d' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD d)
-              pure $ Gen.typeCtor d'
-            digitAnd <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp "(:&)")
-            head' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD head)
-            let allRestDigits = map (Gen.binaryOp digitAnd) (snoc tailDs dType)
-            pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
-
   expandVector (List.NonEmptyList (n :| ns)) a = unsafePartial do
-    l <- makeDigits n
+    let l = Gen.typeInt n
     vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
     case List.uncons ns of
       Nothing -> do
