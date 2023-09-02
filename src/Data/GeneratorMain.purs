@@ -62,9 +62,8 @@ generatorMain :: Effect Unit
 generatorMain = launchAff_ do
   (Args args) <- liftEffect $ execParser opts
   errs <- generatePS args
-  when (A.null errs)
-    $ liftEffect
-    $ exit 1
+  liftEffect <<< exit $
+    if (A.null errs) then 0 else 1
   where
   opts :: ParserInfo Args
   opts = info (argsParser <**> helper)
