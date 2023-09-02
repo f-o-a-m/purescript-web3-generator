@@ -561,9 +561,6 @@ eventDecls (EventData decl) = unsafePartial do
                                           [ Gen.exprString $ unHex $ eventId decl.solidityEvent ]
                                       )
                                   ]
-
-                              , Gen.exprCtor _nothing
-                              , Gen.exprCtor _nothing
                               ]
                           ]
                       ]
