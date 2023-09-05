@@ -1,4 +1,4 @@
-module Generator where
+module Main where
 
 import Data.GeneratorMain (generatorMain)
 
