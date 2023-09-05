@@ -25,7 +25,7 @@ import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import StringParser (Parser, fail, runParser, try)
 import StringParser.CodePoints (anyDigit, string, char, eof)
-import StringParser.Combinators (choice, lookAhead, manyTill, many1, optionMaybe)
+import StringParser.Combinators (choice, manyTill, many1, optionMaybe)
 
 --------------------------------------------------------------------------------
 

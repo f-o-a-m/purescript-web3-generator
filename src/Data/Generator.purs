@@ -3,7 +3,7 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..))
+import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..), replicate)
 import Data.Array as Array
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust)
@@ -553,7 +553,7 @@ eventDecls (EventData decl) = unsafePartial do
                       [ Gen.exprIdent _topics
                       , Gen.exprApp (Gen.exprCtor _just)
                           [ Gen.exprArray
-                              [ Gen.exprOp (Gen.exprCtor _just)
+                              ( Gen.exprOp (Gen.exprCtor _just)
                                   [ Gen.binaryOp "$" (Gen.exprIdent _unsafePartial)
                                   , Gen.binaryOp "$" (Gen.exprIdent _fromJust)
                                   , Gen.binaryOp "$"
@@ -561,7 +561,8 @@ eventDecls (EventData decl) = unsafePartial do
                                           [ Gen.exprString $ unHex $ eventId decl.solidityEvent ]
                                       )
                                   ]
-                              ]
+                                  : replicate (length decl.indexedTypes) (Gen.exprCtor _nothing)
+                              )
                           ]
                       ]
                   )
