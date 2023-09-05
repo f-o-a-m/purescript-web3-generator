@@ -23,7 +23,6 @@ in    conf
             , "node-buffer"
             , "node-fs"
             , "node-path"
-            , "nonempty"
             , "partial"
             , "profunctor-lenses"
             , "strings"
