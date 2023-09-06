@@ -1,5 +1,5 @@
 { name = "web3-generator-main"
-, dependencies = [ "web3-generator" ]
+, dependencies = [ "prelude", "effect", "web3-generator" ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs" ]
 }

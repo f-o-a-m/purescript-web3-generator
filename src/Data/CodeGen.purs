@@ -74,6 +74,7 @@ generatePS os = do
   successCheck = withGraphics (foreground Green) $ "✔"
   warningCheck = withGraphics (foreground Yellow) $ "⚠"
   errorCheck = withGraphics (foreground Red) $ "⚠"
+
   genPSFileName :: GeneratorOptions -> FilePath -> FilePath
   genPSFileName opts fp = opts.pursDir <> "/" <> basenameWithoutExt fp ".json" <> ".purs"
 

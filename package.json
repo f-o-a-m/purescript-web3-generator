@@ -3,8 +3,8 @@
   "scripts": {
     "build": "spago build",
     "test": "rm -rf contracts; spago -x test.dhall test; spago -x test.dhall build",
-    "format": "purs-tidy format-in-place src test",
-    "check": "purs-tidy check src test bench parse-package-set"
+    "tidy": "purs-tidy format-in-place \"src/**/*.purs\" \"test/**/*.purs\" \"example/**/*.purs\"",
+    "tidy-check": "purs-tidy check \"src/**/*.purs\" \"test/**/*.purs\" \"example/**/*.purs\""
   },
   "dependencies": {
     "ethjs-provider-http": "^0.1.6",
@@ -15,9 +15,9 @@
     "yargs": "^8.0.2"
   },
   "devDependencies": {
-    "purescript": "^0.14.2",
-    "purs-tidy": "^0.3.0",
+    "purescript": "^0.15.8",
     "purescript-psa": "^0.8.2",
-    "spago": "^0.20.3"
+    "purs-tidy": "^0.10.0",
+    "spago": "^0.20.9"
   }
 }

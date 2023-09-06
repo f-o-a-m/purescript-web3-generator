@@ -23,9 +23,9 @@ import Data.List (reverse)
 import Data.Maybe (Maybe(..))
 import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
-import Text.Parsing.StringParser (Parser, fail, runParser, try)
-import Text.Parsing.StringParser.CodePoints (anyDigit, string, char, eof)
-import Text.Parsing.StringParser.Combinators (choice, manyTill, many1, optionMaybe)
+import StringParser (Parser, fail, runParser, try)
+import StringParser.CodePoints (anyDigit, string, char, eof)
+import StringParser.Combinators (choice, manyTill, many1, optionMaybe)
 
 --------------------------------------------------------------------------------
 

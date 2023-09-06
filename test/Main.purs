@@ -22,7 +22,7 @@ main :: Effect Unit
 main = launchAff_
   $ runSpec [ consoleReporter ]
   $ do
-    simpleStorageParserSpec
+      simpleStorageParserSpec
 
 simpleStorageParserSpec :: Spec Unit
 simpleStorageParserSpec =

@@ -3,19 +3,18 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, uncons, unsnoc, snoc, (:), concat, unsafeIndex, (..), replicate)
+import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..), replicate)
 import Data.Array as Array
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust)
 import Data.Newtype (un)
-import Data.String.CodeUnits (toCharArray, singleton)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
 import Data.Tuple (Tuple(..), snd)
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
-import Partial.Unsafe (unsafeCrashWith, unsafePartial)
+import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
 import PureScript.CST.Types as CST
@@ -41,18 +40,15 @@ toPSType s = unsafePartial case s of
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
   SolidityUint n -> do
     uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp uintN [ digits ]
+    pure $ Gen.typeApp uintN [ Gen.typeInt n ]
   SolidityInt n -> do
     intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp (Gen.typeCtor intN) [ digits ]
+    pure $ Gen.typeApp (Gen.typeCtor intN) [ Gen.typeInt n ]
   SolidityString -> do
     pure $ Gen.typeCtor "String"
   SolidityBytesN n -> do
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
-    digits <- makeDigits n
-    pure $ Gen.typeApp (Gen.typeCtor bytesN) [ digits ]
+    pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
   SolidityBytesD ->
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
   SolidityVector n a -> mkVector n a
@@ -61,32 +57,8 @@ toPSType s = unsafePartial case s of
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
 
   where
-  makeDigits :: Int -> TidyM.CodegenT e m (CST.Type e)
-  makeDigits n = unsafePartial do
-    let
-      digits :: Array String
-      digits = map singleton <<< toCharArray <<< show $ n
-
-    case unsnoc digits of
-      Nothing -> unsafeCrashWith "impossible case reached in makeDigits"
-      Just { init, last } -> do
-        let mkD d = "D" <> d
-        lastD <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD last)
-        done <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "DOne")
-        let dType = Gen.typeApp (Gen.typeCtor done) [ Gen.typeCtor lastD ]
-        case uncons init of
-          Nothing -> pure dType
-          Just { head, tail } -> do
-            tailDs <- for tail $ \d -> do
-              d' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD d)
-              pure $ Gen.typeCtor d'
-            digitAnd <- TidyM.importFrom "Network.Ethereum.Web3.Solidity.Size" (TidyM.importTypeOp "(:&)")
-            head' <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ mkD head)
-            let allRestDigits = map (Gen.binaryOp digitAnd) (snoc tailDs dType)
-            pure $ Gen.typeOp (Gen.typeCtor head') allRestDigits
-
   mkVector n a = unsafePartial do
-    l <- makeDigits n
+    let l = Gen.typeInt n
     vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
     x <- toPSType a
     pure $ Gen.typeApp vector [ l, x ]
@@ -111,11 +83,7 @@ tagInput
   -> TidyM.CodegenT Void m (CST.Type Void)
 tagInput (Tuple name _type) = unsafePartial $ do
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
-  pure $ Gen.typeApp tagged
-    [ Gen.typeApp proxy [ Gen.typeString name ]
-    , _type
-    ]
+  pure $ Gen.typeApp tagged [ Gen.typeString name, _type ]
 
 makeFunData
   :: forall m
@@ -172,7 +140,6 @@ funTypeSyn (FunData decl) = unsafePartial do
     if isUnCurried then tagInput factor
     else pure $ snd factor
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
   t <-
     if isConstructor then do
       TidyM.importOpen "Prelude"
@@ -181,9 +148,9 @@ funTypeSyn (FunData decl) = unsafePartial do
   pure
     $ Gen.declType decl.typeName []
     $ Gen.typeApp tagged
-      [ Gen.typeApp proxy [ t ]
-      , Gen.typeApp tupleType ts
-      ]
+        [ t
+        , Gen.typeApp tupleType ts
+        ]
 
 mkFunction
   :: forall m
@@ -527,9 +494,8 @@ eventDecls (EventData decl) = unsafePartial do
     let
       f (Tuple name ty) = do
         tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-        proxy <- Gen.typeCtor <$> TidyM.importFrom "Type.Proxy" (TidyM.importType "Proxy")
         pure $ Gen.typeApp tagged
-          [ Gen.typeApp proxy [ Gen.typeString name ]
+          [ Gen.typeString name
           , ty
           ]
     indexedTypesTagged <- for decl.indexedTypes f
@@ -597,7 +563,6 @@ eventDecls (EventData decl) = unsafePartial do
                                   ]
                                   : replicate (length decl.indexedTypes) (Gen.exprCtor _nothing)
                               )
-
                           ]
                       ]
                   )
