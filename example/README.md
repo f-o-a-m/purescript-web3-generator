@@ -4,7 +4,6 @@ We use `purescript-web3-generator` in the absence of template-purescript. Sugges
 
 
 In your project, create a dedicated `spago.dhall` with `web3-generator` as a dependency and a source directory that mimics the setup of this example, e.g. a single module `Main` with the example `main` function.
-```
 
 1. You can now execute the generator with whatever arguments you want. In the case of this repo example, it might look like
 ```bash
