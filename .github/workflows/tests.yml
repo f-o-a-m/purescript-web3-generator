@@ -1,0 +1,21 @@
+name: Run test suite
+
+on:
+  push:
+    branches:
+    - '*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: run tests
+      run: |
+        npm install
+        npm run build
+        npm run test
