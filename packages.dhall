@@ -1,11 +1,5 @@
 let upstream =
-      https://raw.githubusercontent.com/f-o-a-m/package-sets/b3ecf8e8e4e1a35ba97fcb7e9f2858d14ee6a912/purs-0.15.7-web3.dhall
-        sha256:ce57fd949b7cd331d7c61ff45283e35983dd5797b3f17616dd69f8bc06f54784
-    with eth-core.version = "v10.0.0"
-    with web3.version = "v6.0.0"
+      https://raw.githubusercontent.com/f-o-a-m/package-sets/921ac217454768ec3f614a9571c109b2ad542c07/purs-0.15.7-web3.dhall
+        sha256:818d12df6f7ce455657ff559798e50ec14e098f8d6acc655f674f26c7a007e3d
 
-let overrides = {=}
-
-let additions = {=}
-
-in  upstream // overrides // additions
+in  upstream
