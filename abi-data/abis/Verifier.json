@@ -1,0 +1,174 @@
+[
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "seal",
+            "type": "bytes"
+          },
+          {
+            "components": [
+              {
+                "internalType": "bytes32",
+                "name": "preStateDigest",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "postStateDigest",
+                "type": "bytes32"
+              },
+              {
+                "components": [
+                  {
+                    "internalType": "enum SystemExitCode",
+                    "name": "system",
+                    "type": "uint8"
+                  },
+                  {
+                    "internalType": "uint8",
+                    "name": "user",
+                    "type": "uint8"
+                  }
+                ],
+                "internalType": "struct ExitCode",
+                "name": "exitCode",
+                "type": "tuple"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "input",
+                "type": "bytes32"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "output",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct ReceiptMetadata",
+            "name": "meta",
+            "type": "tuple"
+          }
+        ],
+        "internalType": "struct Receipt",
+        "name": "receipt",
+        "type": "tuple"
+      }
+    ],
+    "name": "verify",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "seal",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "imageId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "postStateDigest",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "journal",
+        "type": "bytes"
+      }
+    ],
+    "name": "verify",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "seal",
+        "type": "bytes"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "imageId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "postStateDigest",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "journalHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "verify",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256[2]",
+        "name": "_pA",
+        "type": "uint256[2]"
+      },
+      {
+        "internalType": "uint256[2][2]",
+        "name": "_pB",
+        "type": "uint256[2][2]"
+      },
+      {
+        "internalType": "uint256[2]",
+        "name": "_pC",
+        "type": "uint256[2]"
+      },
+      {
+        "internalType": "uint256[4]",
+        "name": "_pubSignals",
+        "type": "uint256[4]"
+      }
+    ],
+    "name": "verifyProof",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]

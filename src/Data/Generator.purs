@@ -2,8 +2,8 @@ module Data.Generator where
 
 import Prelude
 
-import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..), replicate)
+import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.Array (concat, filter, length, replicate, snoc, uncons, unsafeIndex, (..), (:))
 import Data.Array as Array
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust)
@@ -15,9 +15,9 @@ import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
 import Partial.Unsafe (unsafePartial)
+import PureScript.CST.Types as CST
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import PureScript.CST.Types as CST
 
 --------------------------------------------------------------------------------
 
@@ -33,28 +33,33 @@ class Code a m where
 --------------------------------------------------------------------------------
 
 toPSType :: forall e m. Monad m => SolidityType -> TidyM.CodegenT e m (CST.Type e)
-toPSType s = unsafePartial case s of
-  SolidityBool -> do
+toPSType s = case s of
+  SolidityBool -> unsafePartial do
     pure $ Gen.typeCtor "Boolean"
-  SolidityAddress ->
+  SolidityAddress -> unsafePartial $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
-  SolidityUint n -> do
+  SolidityUint n -> unsafePartial do
     uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
     pure $ Gen.typeApp uintN [ Gen.typeInt n ]
-  SolidityInt n -> do
+  SolidityInt n -> unsafePartial do
     intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
     pure $ Gen.typeApp (Gen.typeCtor intN) [ Gen.typeInt n ]
-  SolidityString -> do
+  SolidityString -> unsafePartial do
     pure $ Gen.typeCtor "String"
-  SolidityBytesN n -> do
+  SolidityBytesN n -> unsafePartial do
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
-  SolidityBytesD ->
+  SolidityBytesD -> unsafePartial $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
   SolidityVector n a -> mkVector n a
-  SolidityArray a -> do
+  SolidityArray a -> unsafePartial do
     t <- toPSType a
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+  SolidityTuple factors -> unsafePartial do
+    let tupleType = "Tuple" <> show (length factors)
+    psFactors <- for factors toPSType
+    tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+    pure $ Gen.typeApp tuple psFactors
 
   where
   mkVector n a = unsafePartial do
@@ -259,14 +264,16 @@ mkFunction fun@(FunData f) = unsafePartial do
             , unsafePartial $ unsafeIndex idents 1
             , Gen.exprTyped (Gen.exprApp tagged [ tupleC ]) (Gen.typeCtor f.typeName)
             ]
-      if length outputs == 1 then do
-        untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
-        TidyM.importOpen "Prelude"
-        pure $
-          Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [ untuple ])
-            [ Gen.binaryOp "<$>" callExpr
-            ]
-      else pure callExpr
+      case outputs of
+        [ SolidityTuple _ ] -> pure callExpr
+        [ _ ] -> do
+          untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
+          TidyM.importOpen "Prelude"
+          pure $
+            Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [ untuple ])
+              [ Gen.binaryOp "<$>" callExpr
+              ]
+        _ -> pure callExpr
     pure
       [ sig
       , Gen.declValue f.name (map Gen.binderVar vars) expr
