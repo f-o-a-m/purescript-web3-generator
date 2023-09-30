@@ -5,6 +5,7 @@ import Prelude
 import Control.Alternative ((<|>))
 import Control.Error.Util (note)
 import Control.Monad.Error.Class (throwError)
+import Data.Argonaut (decodeJson, (.:?))
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.:))
@@ -37,6 +38,21 @@ class Format a where
 -- | Solidity Type Parsers
 --------------------------------------------------------------------------------
 
+newtype NamedSolidityType = NamedSolidityType { name :: Maybe String, type :: SolidityType }
+
+instance DecodeJson NamedSolidityType where
+  decodeJson json = do
+    obj <- decodeJson json
+    n <- obj .:? "name"
+    t' <- decodeJson json
+    pure $ NamedSolidityType { name: n, type: t' }
+
+derive instance Generic NamedSolidityType _
+derive instance Eq NamedSolidityType
+
+instance Show NamedSolidityType where
+  show x = genericShow x
+
 data SolidityType
   = SolidityBool
   | SolidityAddress
@@ -47,7 +63,7 @@ data SolidityType
   | SolidityBytesD
   | SolidityVector Int SolidityType
   | SolidityArray SolidityType
-  | SolidityTuple (Array SolidityType)
+  | SolidityTuple (Array NamedSolidityType)
 
 derive instance Generic SolidityType _
 derive instance Eq SolidityType
@@ -66,7 +82,7 @@ instance Format SolidityType where
     SolidityBytesD -> "bytes"
     SolidityVector n a -> format a <> "[" <> show n <> "]"
     SolidityArray a -> format a <> "[]"
-    SolidityTuple as -> "(" <> intercalate "," (map format as) <> ")"
+    SolidityTuple as -> "(" <> intercalate "," (map (\(NamedSolidityType { type: t }) -> format t) as) <> ")"
 
 parseUint :: Parser SolidityType
 parseUint = do
@@ -161,20 +177,13 @@ parseSolidityType' s = runParser (solidityTypeParser <* eof) s # lmap \err ->
 
 instance DecodeJson SolidityType where
   decodeJson json = do
-    let
-      simpleP = do
-        obj <- decodeJson json
-        t <- obj .: "type"
-        parseSolidityType t
-      tupleP = do
-        obj <- decodeJson json
-        t <- obj .: "type"
-        unless (t == "tuple") $
-          throwError (Named "Expected type tuple" $ UnexpectedValue $ encodeJson t)
-        components <- obj .: "components"
-        factors <- traverse decodeJson components
-        pure $ SolidityTuple factors
-    simpleP <|> tupleP
+    obj <- decodeJson json
+    t <- obj .: "type"
+    if (t == "tuple") then do
+      components <- obj .: "components"
+      factors <- traverse decodeJson components
+      pure $ SolidityTuple factors
+    else parseSolidityType t
 
 --------------------------------------------------------------------------------
 -- | Solidity Function Parser

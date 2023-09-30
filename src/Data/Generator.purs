@@ -2,11 +2,12 @@ module Data.Generator where
 
 import Prelude
 
-import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
-import Data.Array (concat, filter, length, replicate, snoc, uncons, unsafeIndex, (..), (:))
+import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.Array (concat, filter, head, length, replicate, snoc, uncons, unsafeIndex, (..), (:))
 import Data.Array as Array
+import Data.Generic.Rep (from)
 import Data.Identity (Identity(..))
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..), fromJust, isNothing)
 import Data.Newtype (un)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (for)
@@ -56,10 +57,23 @@ toPSType s = case s of
     t <- toPSType a
     pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
   SolidityTuple factors -> unsafePartial do
-    let tupleType = "Tuple" <> show (length factors)
-    psFactors <- for factors toPSType
-    tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-    pure $ Gen.typeApp tuple psFactors
+    case head factors of
+      Nothing ->
+        Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+      Just (NamedSolidityType { name }) ->
+        -- assume that none of them have a name if the first doesn't
+        if isNothing name then do
+          let tupleType = "Tuple" <> show (length factors)
+          tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+          ts <- for factors \(NamedSolidityType { type: t }) -> toPSType t
+          pure $ Gen.typeApp tuple ts
+        else do
+          fs <- for factors $ \(NamedSolidityType { name: _name, type: t }) ->
+            let
+              n = unsafePartial $ fromJust _name
+            in
+              Tuple n <$> toPSType t
+          pure $ Gen.typeRecord fs Nothing
 
   where
   mkVector n a = unsafePartial do
