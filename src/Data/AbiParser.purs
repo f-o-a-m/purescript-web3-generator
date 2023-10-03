@@ -4,18 +4,17 @@ import Prelude
 
 import Control.Alternative ((<|>))
 import Control.Error.Util (note)
-import Control.Monad.Error.Class (throwError)
-import Data.Argonaut (decodeJson, (.:?))
+import Data.Argonaut ((.:?))
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
 import Data.Argonaut.Decode ((.:))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError(..), printJsonDecodeError)
 import Data.Argonaut.Encode.Class (encodeJson)
-import Data.Array (fromFoldable, intercalate, null)
+import Data.Array (fromFoldable, intercalate)
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..))
-import Data.Foldable (all, foldr)
+import Data.Foldable (foldr)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
 import Data.Int (fromString)
@@ -38,12 +37,17 @@ class Format a where
 -- | Solidity Type Parsers
 --------------------------------------------------------------------------------
 
-newtype NamedSolidityType = NamedSolidityType { name :: Maybe String, type :: SolidityType }
+newtype NamedSolidityType =
+  NamedSolidityType { name :: Maybe String, type :: SolidityType }
 
 instance DecodeJson NamedSolidityType where
   decodeJson json = do
     obj <- decodeJson json
-    n <- obj .:? "name"
+    _n <- obj .:? "name"
+    let
+      n = case _n of
+        Just "" -> Nothing
+        a -> a
     t' <- decodeJson json
     pure $ NamedSolidityType { name: n, type: t' }
 
@@ -52,6 +56,9 @@ derive instance Eq NamedSolidityType
 
 instance Show NamedSolidityType where
   show x = genericShow x
+
+instance Format NamedSolidityType where
+  format (NamedSolidityType { type: t }) = format t
 
 data SolidityType
   = SolidityBool
@@ -70,6 +77,16 @@ derive instance Eq SolidityType
 
 instance Show SolidityType where
   show x = genericShow x
+
+instance DecodeJson SolidityType where
+  decodeJson json = do
+    obj <- decodeJson json
+    t <- obj .: "type"
+    if (t == "tuple") then do
+      components <- obj .: "components"
+      factors <- traverse decodeJson components
+      pure $ SolidityTuple factors
+    else parseSolidityType t
 
 instance Format SolidityType where
   format s = case s of
@@ -158,6 +175,14 @@ parseArrayType = do
       pure $ FixedLength n
   dynamic <|> fixedLength
 
+parseSolidityType :: String -> Either JsonDecodeError SolidityType
+parseSolidityType s = parseSolidityType' s # lmap \err ->
+  Named err $ UnexpectedValue (encodeJson s)
+
+parseSolidityType' :: String -> Either String SolidityType
+parseSolidityType' s = runParser (solidityTypeParser <* eof) s # lmap \err ->
+  "Failed to parse SolidityType " <> show s <> " with error: " <> show err
+
 solidityTypeParser :: Parser SolidityType
 solidityTypeParser = do
   t <- solidityBasicTypeParser
@@ -168,57 +193,18 @@ solidityTypeParser = do
       FixedLength n -> SolidityVector n acc
   pure $ foldr f t arrayTypes
 
-parseSolidityType :: String -> Either JsonDecodeError SolidityType
-parseSolidityType s = parseSolidityType' s # lmap \err -> Named err $ UnexpectedValue (encodeJson s)
-
-parseSolidityType' :: String -> Either String SolidityType
-parseSolidityType' s = runParser (solidityTypeParser <* eof) s # lmap \err ->
-  "Failed to parse SolidityType " <> show s <> " with error: " <> show err
-
-instance DecodeJson SolidityType where
-  decodeJson json = do
-    obj <- decodeJson json
-    t <- obj .: "type"
-    if (t == "tuple") then do
-      components <- obj .: "components"
-      factors <- traverse decodeJson components
-      pure $ SolidityTuple factors
-    else parseSolidityType t
-
 --------------------------------------------------------------------------------
 -- | Solidity Function Parser
 --------------------------------------------------------------------------------
 
-newtype FunctionInput =
-  FunctionInput
-    { name :: String
-    , type :: SolidityType
-    }
-
-derive instance Generic FunctionInput _
-
-instance Show FunctionInput where
-  show = genericShow
-
-instance Format FunctionInput where
-  format (FunctionInput fi) = format fi.type
-
-instance DecodeJson FunctionInput where
-  decodeJson json = do
-    obj <- decodeJson json
-    n <- obj .: "name"
-    typ <- decodeJson json
-    pure $ FunctionInput { type: typ, name: n }
-
 data SolidityFunction =
   SolidityFunction
     { name :: String
-    , inputs :: Array FunctionInput
-    , outputs :: Array SolidityType
+    , inputs :: Array NamedSolidityType
+    , outputs :: Array NamedSolidityType
     , constant :: Boolean
     , payable :: Boolean
     , isConstructor :: Boolean
-    , isUnCurried :: Boolean
     }
 
 derive instance Generic SolidityFunction _
@@ -256,33 +242,6 @@ instance DecodeJson SolidityFunction where
       , constant: cp.constant
       , payable: cp.payable
       , isConstructor: false
-      , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
-          && not (null is)
-      }
-
---------------------------------------------------------------------------------
--- | Solidity Constructor Parser
---------------------------------------------------------------------------------
-
-data SolidityConstructor =
-  SolidityConstructor
-    { inputs :: Array FunctionInput
-    , isUnCurried :: Boolean
-    }
-
-derive instance Generic SolidityConstructor _
-
-instance Show SolidityConstructor where
-  show = genericShow
-
-instance DecodeJson SolidityConstructor where
-  decodeJson json = do
-    obj <- decodeJson json
-    is <- obj .: "inputs"
-    pure $ SolidityConstructor
-      { inputs: is
-      , isUnCurried: all (\(FunctionInput fi) -> fi.name /= "") is
-          && not (null is)
       }
 
 --------------------------------------------------------------------------------
@@ -351,6 +310,23 @@ instance Show SolidityFallback where
 instance DecodeJson SolidityFallback where
   decodeJson _ = do
     pure $ SolidityFallback
+
+data SolidityConstructor =
+  SolidityConstructor
+    { inputs :: Array NamedSolidityType
+    }
+
+derive instance Generic SolidityConstructor _
+
+instance Show SolidityConstructor where
+  show = genericShow
+
+instance DecodeJson SolidityConstructor where
+  decodeJson json = do
+    obj <- decodeJson json
+    is <- obj .: "inputs"
+    pure $ SolidityConstructor
+      { inputs: is }
 
 --------------------------------------------------------------------------------
 -- | ABI
