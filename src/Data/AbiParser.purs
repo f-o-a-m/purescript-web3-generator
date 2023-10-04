@@ -13,7 +13,7 @@ import Data.Argonaut.Decode.Error (JsonDecodeError(..), printJsonDecodeError)
 import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, intercalate)
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..))
+import Data.Either (Either(..), either)
 import Data.Foldable (foldr)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)
@@ -60,7 +60,7 @@ instance Show NamedSolidityType where
 instance Format NamedSolidityType where
   format (NamedSolidityType { type: t }) = format t
 
-data SolidityType
+data BasicSolidityType
   = SolidityBool
   | SolidityAddress
   | SolidityUint Int
@@ -68,9 +68,29 @@ data SolidityType
   | SolidityString
   | SolidityBytesN Int
   | SolidityBytesD
+  | SolidityTuple (Array NamedSolidityType)
+
+derive instance Generic BasicSolidityType _
+derive instance Eq BasicSolidityType
+
+instance Show BasicSolidityType where
+  show x = genericShow x
+
+instance Format BasicSolidityType where
+  format s = case s of
+    SolidityBool -> "bool"
+    SolidityAddress -> "address"
+    SolidityUint n -> "uint" <> show n
+    SolidityInt n -> "int" <> show n
+    SolidityString -> "string"
+    SolidityBytesN n -> "bytes" <> show n
+    SolidityBytesD -> "bytes"
+    SolidityTuple as -> "(" <> intercalate "," (map (\(NamedSolidityType { type: t }) -> format t) as) <> ")"
+
+data SolidityType
+  = BasicType BasicSolidityType
   | SolidityVector Int SolidityType
   | SolidityArray SolidityType
-  | SolidityTuple (Array NamedSolidityType)
 
 derive instance Generic SolidityType _
 derive instance Eq SolidityType
@@ -82,41 +102,36 @@ instance DecodeJson SolidityType where
   decodeJson json = do
     obj <- decodeJson json
     t <- obj .: "type"
-    if (t == "tuple") then do
-      components <- obj .: "components"
-      factors <- traverse decodeJson components
-      pure $ SolidityTuple factors
-    else parseSolidityType t
+    solType <- parseSolidityType t
+    case solType of
+      Left t' -> pure t'
+      Right solidityTuple -> do
+        components <- obj .: "components"
+        factors <- traverse decodeJson components
+        pure $ solidityTuple factors
 
 instance Format SolidityType where
   format s = case s of
-    SolidityBool -> "bool"
-    SolidityAddress -> "address"
-    SolidityUint n -> "uint" <> show n
-    SolidityInt n -> "int" <> show n
-    SolidityString -> "string"
-    SolidityBytesN n -> "bytes" <> show n
-    SolidityBytesD -> "bytes"
+    BasicType t -> format t
     SolidityVector n a -> format a <> "[" <> show n <> "]"
     SolidityArray a -> format a <> "[]"
-    SolidityTuple as -> "(" <> intercalate "," (map (\(NamedSolidityType { type: t }) -> format t) as) <> ")"
 
-parseUint :: Parser SolidityType
+parseUint :: Parser BasicSolidityType
 parseUint = do
   _ <- string "uint"
   n <- parseDigits >>= asInt
   pure $ SolidityUint n
 
-parseInt :: Parser SolidityType
+parseInt :: Parser BasicSolidityType
 parseInt = do
   _ <- string "int"
   n <- parseDigits >>= asInt
   pure $ SolidityInt n
 
-parseBool :: Parser SolidityType
+parseBool :: Parser BasicSolidityType
 parseBool = string "bool" >>= \_ -> pure SolidityBool
 
-parseString :: Parser SolidityType
+parseString :: Parser BasicSolidityType
 parseString = string "string" >>= \_ -> pure SolidityString
 
 parseDigits :: Parser String
@@ -128,7 +143,7 @@ asInt n = case fromString n of
     fail $ "Couldn't parse as Int : " <> n
   Just n' -> pure $ n'
 
-parseBytes :: Parser SolidityType
+parseBytes :: Parser BasicSolidityType
 parseBytes = do
   _ <- string "bytes"
   mns <- optionMaybe parseDigits
@@ -138,20 +153,29 @@ parseBytes = do
       n <- asInt ns
       pure $ SolidityBytesN n
 
-parseAddress :: Parser SolidityType
+parseAddress :: Parser BasicSolidityType
 parseAddress = string "address" >>= \_ -> pure SolidityAddress
 
-solidityBasicTypeParser :: Parser SolidityType
+solidityBasicTypeParser
+  :: Parser
+       ( Either
+           BasicSolidityType
+           (Array NamedSolidityType -> BasicSolidityType)
+       )
 solidityBasicTypeParser =
-  choice
-    [ parseUint
-    , parseInt
-    , parseAddress
-    , parseBool
-    , parseString
-    , parseBytes
-    , parseAddress
-    ]
+  let
+    p1 = choice
+      [ parseUint
+      , parseInt
+      , parseAddress
+      , parseBool
+      , parseString
+      , parseBytes
+      , parseAddress
+      ]
+    p2 = string "tuple" *> pure SolidityTuple
+  in
+    (Left <$> p1) <|> (Right <$> p2)
 
 data ArrayType = Dynamic | FixedLength Int
 
@@ -175,23 +199,49 @@ parseArrayType = do
       pure $ FixedLength n
   dynamic <|> fixedLength
 
-parseSolidityType :: String -> Either JsonDecodeError SolidityType
+parseSolidityType
+  :: String
+  -> Either
+       JsonDecodeError
+       ( Either
+           SolidityType
+           (Array NamedSolidityType -> SolidityType)
+       )
 parseSolidityType s = parseSolidityType' s # lmap \err ->
   Named err $ UnexpectedValue (encodeJson s)
 
-parseSolidityType' :: String -> Either String SolidityType
+parseSolidityType'
+  :: String
+  -> Either
+       String
+       ( Either
+           SolidityType
+           (Array NamedSolidityType -> SolidityType)
+       )
 parseSolidityType' s = runParser (solidityTypeParser <* eof) s # lmap \err ->
   "Failed to parse SolidityType " <> show s <> " with error: " <> show err
 
-solidityTypeParser :: Parser SolidityType
+solidityTypeParser
+  :: Parser
+       ( Either
+           SolidityType
+           (Array NamedSolidityType -> SolidityType)
+       )
 solidityTypeParser = do
-  t <- solidityBasicTypeParser
+  et <- solidityBasicTypeParser
   arrayTypes <- reverse <$> manyTill parseArrayType eof
   let
     f at acc = case at of
       Dynamic -> SolidityArray acc
       FixedLength n -> SolidityVector n acc
-  pure $ foldr f t arrayTypes
+  pure $
+    either
+      (\t -> Left $ foldr f (BasicType t) arrayTypes)
+      ( \solidityTuple -> Right
+          \factors ->
+            foldr f (BasicType $ solidityTuple factors) arrayTypes
+      )
+      et
 
 --------------------------------------------------------------------------------
 -- | Solidity Function Parser
@@ -250,8 +300,7 @@ instance DecodeJson SolidityFunction where
 
 data IndexedSolidityValue =
   IndexedSolidityValue
-    { type :: SolidityType
-    , name :: String
+    { type :: NamedSolidityType
     , indexed :: Boolean
     }
 
@@ -265,14 +314,11 @@ instance Format IndexedSolidityValue where
 
 instance DecodeJson IndexedSolidityValue where
   decodeJson json = do
+    t <- decodeJson json
     obj <- decodeJson json
-    nm <- obj .: "name"
-    ts <- obj .: "type"
-    t <- parseSolidityType ts
     ixed <- obj .: "indexed"
     pure $ IndexedSolidityValue
-      { name: nm
-      , type: t
+      { type: t
       , indexed: ixed
       }
 

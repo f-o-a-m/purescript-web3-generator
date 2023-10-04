@@ -2,10 +2,10 @@ module Data.Generator where
 
 import Prelude
 
-import Data.AbiParser (Abi(..), AbiType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.AbiParser (Abi(..), AbiType(..), BasicSolidityType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
 import Data.Array (concat, filter, head, length, replicate, snoc, (:))
 import Data.Identity (Identity(..))
-import Data.Maybe (Maybe(..), fromJust, isJust, maybe)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (un)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (all, for)
@@ -36,33 +36,35 @@ type PSTypeOptions = { onlyTuples :: Boolean, withLeafWrappers :: Boolean }
 defaultPSTypeOpts :: PSTypeOptions
 defaultPSTypeOpts = { onlyTuples: false, withLeafWrappers: false }
 
-toPSType :: forall m. Monad m => PSTypeOptions -> SolidityType -> TidyM.CodegenT Void m (CST.Type Void)
-toPSType opts s = case s of
-  SolidityBool -> unsafePartial $ wrapWhenLeaf do
+basicToPSType
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> BasicSolidityType
+  -> TidyM.CodegenT Void m (CST.Type Void)
+basicToPSType opts a = case a of
+  SolidityBool -> unsafePartial $ maybeWrap opts true do
     pure $ Gen.typeCtor "Boolean"
-  SolidityAddress -> unsafePartial $ wrapWhenLeaf $
+  SolidityAddress -> unsafePartial $ maybeWrap opts true do
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
-  SolidityUint n -> unsafePartial $ wrapWhenLeaf do
+  SolidityUint n -> unsafePartial $ maybeWrap opts true do
     uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
     pure $ Gen.typeApp uintN [ Gen.typeInt n ]
-  SolidityInt n -> unsafePartial $ wrapWhenLeaf do
+  SolidityInt n -> unsafePartial $ maybeWrap opts true do
     intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
     pure $ Gen.typeApp (Gen.typeCtor intN) [ Gen.typeInt n ]
-  SolidityString -> unsafePartial $ wrapWhenLeaf do
+  SolidityString -> unsafePartial $ maybeWrap opts true do
     pure $ Gen.typeCtor "String"
-  SolidityBytesN n -> unsafePartial $ wrapWhenLeaf do
+  SolidityBytesN n -> unsafePartial $ maybeWrap opts true do
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
-  SolidityBytesD -> unsafePartial $ wrapWhenLeaf $
+  SolidityBytesD -> unsafePartial $ maybeWrap opts true $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  SolidityVector n a -> wrapWhenLeaf $ mkVector n a
-  SolidityArray a -> unsafePartial $ wrapWhenLeaf do
-    t <- toPSType defaultPSTypeOpts a
-    pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
-  SolidityTuple factors -> unsafePartial do
+  tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup) do
     case head factors of
       Nothing ->
-        Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+        ( Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+        )
       Just (NamedSolidityType { name: Nothing }) -> do
         -- assume that none of them have a name if the first doesn't
         let tupleType = "Tuple" <> show (length factors)
@@ -75,6 +77,7 @@ toPSType opts s = case s of
         ts <- for factors \(NamedSolidityType { name: _name, type: t }) -> do
           let n = unsafePartial $ fromJust _name
           _pst <- toPSType opts t
+
           tagInput (Tuple n _pst)
         pure $ Gen.typeApp tuple ts
       _ -> do
@@ -85,18 +88,56 @@ toPSType opts s = case s of
             Tuple n <$> toPSType opts t
         pure $ Gen.typeRecord fs Nothing
 
-  where
-  wrapWhenLeaf t
-    | opts.withLeafWrappers = unsafePartial do
-        _identity <- Gen.typeCtor <$> TidyM.importFrom "Data.Identity" (TidyM.importType "Identity")
-        _t <- t
-        pure $ Gen.typeApp _identity [ _t ]
-    | otherwise = t
-  mkVector n a = unsafePartial do
-    let l = Gen.typeInt n
-    vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
-    x <- toPSType defaultPSTypeOpts a
-    pure $ Gen.typeApp vector [ l, x ]
+toPSType
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> SolidityType
+  -> TidyM.CodegenT Void m (CST.Type Void)
+toPSType opts s = case s of
+  BasicType b -> basicToPSType opts b
+  v@(SolidityVector n a) -> unsafePartial $
+    if (noRecordsAtOrBelow v) then maybeWrap opts true do
+      let l = Gen.typeInt n
+      vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
+      x <- toPSType opts { withLeafWrappers = false } a
+      pure $ Gen.typeApp vector [ l, x ]
+    else do
+      let l = Gen.typeInt n
+      vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
+      x <- toPSType opts a
+      pure $ Gen.typeApp vector [ l, x ]
+  arr@(SolidityArray a) -> unsafePartial $
+    if noRecordsAtOrBelow arr then maybeWrap opts true do
+      t <- toPSType opts { withLeafWrappers = false } a
+      pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+    else do
+      t <- toPSType opts a
+      pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+
+-- thi is such a hack
+maybeWrap
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> Boolean
+  -> TidyM.CodegenT Void m (CST.Type Void)
+  -> TidyM.CodegenT Void m (CST.Type Void)
+maybeWrap opts noRecs t
+  | opts.withLeafWrappers && noRecs = unsafePartial do
+      _identity <- Gen.typeCtor <$> TidyM.importFrom "Data.Identity" (TidyM.importType "Identity")
+      _t <- t
+      pure $ Gen.typeApp _identity [ _t ]
+  | otherwise = t
+
+noRecordsAtOrBelow
+  :: SolidityType
+  -> Boolean
+noRecordsAtOrBelow = case _ of
+  BasicType (SolidityTuple factors) -> all (\(NamedSolidityType { name }) -> isNothing name) factors
+  BasicType _ -> true
+  SolidityVector _ a -> noRecordsAtOrBelow a
+  SolidityArray a -> noRecordsAtOrBelow a
 
 --------------------------------------------------------------------------------
 
@@ -434,14 +475,17 @@ mkEventData e@(SolidityEvent ev) = do
     is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
     nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
   indexedTypes <- for is \(IndexedSolidityValue sv) -> do
-    t <- toPSType { onlyTuples: true, withLeafWrappers: true } sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType { onlyTuples: true, withLeafWrappers: true } t
+    pure $ Tuple (fromMaybe "" name) t
   nonIndexedTypes <- for nis \(IndexedSolidityValue sv) -> do
-    t <- toPSType { onlyTuples: true, withLeafWrappers: true } sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType { onlyTuples: true, withLeafWrappers: true } t
+    pure $ Tuple (fromMaybe "" name) t
   recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
-    t <- toPSType defaultPSTypeOpts sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType defaultPSTypeOpts t
+    pure $ Tuple (fromMaybe "" name) t
   pure $ EventData
     { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
     , indexedTypes
