@@ -5,11 +5,6 @@ import Prelude
 import Ansi.Codes (Color(..))
 import Ansi.Output (withGraphics, foreground)
 import Control.Error.Util (note)
-import Effect.Aff (Aff, try)
-import Effect.Aff.Class (class MonadAff, liftAff)
-import Effect.Console (log)
-import Effect.Class (liftEffect)
-import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
@@ -19,28 +14,35 @@ import Data.Argonaut.Decode.Error (printJsonDecodeError)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, null)
+import Data.Array as Array
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (for_)
-import Data.Generator (genCode)
+import Data.Generator (genCode, toSignature)
 import Data.Identity (Identity(..))
 import Data.Lens ((^?))
-import Data.Array as Array
 import Data.Lens.Index (ix)
+import Data.Map as Map
 import Data.Maybe (Maybe(..), isNothing)
 import Data.Newtype (un)
-import Data.Map as Map
 import Data.String (Pattern(..), Replacement(..), replaceAll, stripPrefix)
 import Data.Traversable (for, traverse_)
 import Data.Tuple (Tuple(..))
+import Effect.Aff (Aff, try)
+import Effect.Aff.Class (class MonadAff, liftAff)
+import Effect.Class (liftEffect)
+import Effect.Console (log)
+import Effect.Exception (error)
+import Network.Ethereum.Core.HexString (unHex)
+import Network.Ethereum.Core.Keccak256 (toSelector)
 import Node.Encoding (Encoding(UTF8))
 import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
 import Node.FS.Stats as Stats
 import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
+import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import Partial.Unsafe (unsafePartial)
 
 type GeneratorOptions =
   { jsonDir :: FilePath
@@ -131,7 +133,7 @@ maybeAnnotateArity abi =
   groupingFunc a = Tuple [ a ] []
 
   go :: SolidityFunction -> SolidityFunction
-  go (SolidityFunction f) = SolidityFunction f { name = f.name <> show (length f.inputs) }
+  go fun@(SolidityFunction f) = SolidityFunction f { name = f.name <> unHex (toSelector (toSignature fun)) }
 
 parseAbi :: forall r. { truffle :: Boolean | r } -> Json -> Either String AbiWithErrors
 parseAbi { truffle } abiJson = case truffle of

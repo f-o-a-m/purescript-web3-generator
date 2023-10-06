@@ -1,0 +1,183 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "a1",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "a2",
+            "type": "string"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct NestedTuples.A",
+        "name": "_a",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string[]",
+            "name": "b1",
+            "type": "string[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "b2",
+            "type": "bytes32"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct NestedTuples.B",
+        "name": "_b",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "uint256",
+                "name": "a1",
+                "type": "uint256"
+              },
+              {
+                "internalType": "string",
+                "name": "a2",
+                "type": "string"
+              }
+            ],
+            "internalType": "struct NestedTuples.A",
+            "name": "c1",
+            "type": "tuple"
+          },
+          {
+            "components": [
+              {
+                "internalType": "string[]",
+                "name": "b1",
+                "type": "string[]"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "b2",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct NestedTuples.B",
+            "name": "c2",
+            "type": "tuple"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct NestedTuples.C[]",
+        "name": "_cs",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "Update",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "cs",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "a1",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "a2",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct NestedTuples.A",
+        "name": "c1",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string[]",
+            "name": "b1",
+            "type": "string[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "b2",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct NestedTuples.B",
+        "name": "c2",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "a1",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "a2",
+            "type": "string"
+          }
+        ],
+        "internalType": "struct NestedTuples.A",
+        "name": "a",
+        "type": "tuple"
+      },
+      {
+        "components": [
+          {
+            "internalType": "string[]",
+            "name": "b1",
+            "type": "string[]"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "b2",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct NestedTuples.B",
+        "name": "b",
+        "type": "tuple"
+      }
+    ],
+    "name": "update",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

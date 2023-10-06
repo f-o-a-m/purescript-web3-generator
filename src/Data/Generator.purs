@@ -2,22 +2,21 @@ module Data.Generator where
 
 import Prelude
 
-import Data.AbiParser (Abi(..), AbiType(..), FunctionInput(..), IndexedSolidityValue(..), SolidityEvent(..), SolidityFunction(..), SolidityConstructor(..), SolidityType(..), format)
-import Data.Array (filter, length, uncons, snoc, (:), concat, unsafeIndex, (..), replicate)
-import Data.Array as Array
+import Data.AbiParser (Abi(..), AbiType(..), BasicSolidityType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
+import Data.Array (concat, filter, head, length, replicate, snoc, (:))
 import Data.Identity (Identity(..))
-import Data.Maybe (Maybe(..), fromJust)
+import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (un)
 import Data.String (drop, joinWith, take, toLower, toUpper)
-import Data.Traversable (for)
-import Data.Tuple (Tuple(..), snd)
+import Data.Traversable (all, for)
+import Data.Tuple (Tuple(..))
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
 import Partial.Unsafe (unsafePartial)
+import PureScript.CST.Types as CST
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
-import PureScript.CST.Types as CST
 
 --------------------------------------------------------------------------------
 
@@ -32,49 +31,210 @@ class Code a m where
 -- | Utils
 --------------------------------------------------------------------------------
 
-toPSType :: forall e m. Monad m => SolidityType -> TidyM.CodegenT e m (CST.Type e)
-toPSType s = unsafePartial case s of
-  SolidityBool -> do
+type PSTypeOptions = { onlyTuples :: Boolean, withLeafWrappers :: Boolean }
+
+defaultPSTypeOpts :: PSTypeOptions
+defaultPSTypeOpts = { onlyTuples: false, withLeafWrappers: false }
+
+basicToPSType
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> BasicSolidityType
+  -> TidyM.CodegenT Void m (CST.Type Void)
+basicToPSType opts a = case a of
+  SolidityBool -> unsafePartial $ maybeWrap opts true do
     pure $ Gen.typeCtor "Boolean"
-  SolidityAddress ->
+  SolidityAddress -> unsafePartial $ maybeWrap opts true do
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Address")
-  SolidityUint n -> do
+  SolidityUint n -> unsafePartial $ maybeWrap opts true do
     uintN <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "UIntN")
     pure $ Gen.typeApp uintN [ Gen.typeInt n ]
-  SolidityInt n -> do
+  SolidityInt n -> unsafePartial $ maybeWrap opts true do
     intN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "IntN")
     pure $ Gen.typeApp (Gen.typeCtor intN) [ Gen.typeInt n ]
-  SolidityString -> do
+  SolidityString -> unsafePartial $ maybeWrap opts true do
     pure $ Gen.typeCtor "String"
-  SolidityBytesN n -> do
+  SolidityBytesN n -> unsafePartial $ maybeWrap opts true do
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
-  SolidityBytesD ->
+  SolidityBytesD -> unsafePartial $ maybeWrap opts true $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  SolidityVector n a -> mkVector n a
-  SolidityArray a -> do
-    t <- toPSType a
-    pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+  tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup) do
+    case head factors of
+      Nothing ->
+        ( Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+        )
+      Just (NamedSolidityType { name: Nothing }) -> do
+        -- assume that none of them have a name if the first doesn't
+        let tupleType = "Tuple" <> show (length factors)
+        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+        ts <- for factors \(NamedSolidityType { type: t }) -> toPSType opts t
+        pure $ Gen.typeApp tuple ts
+      _ | opts.onlyTuples -> do
+        let tupleType = "Tuple" <> show (length factors)
+        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+        ts <- for factors \(NamedSolidityType { name: _name, type: t }) -> do
+          let n = unsafePartial $ fromJust _name
+          _pst <- toPSType opts t
 
-  where
-  mkVector n a = unsafePartial do
-    let l = Gen.typeInt n
-    vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
-    x <- toPSType a
-    pure $ Gen.typeApp vector [ l, x ]
+          tagInput (Tuple n _pst)
+        pure $ Gen.typeApp tuple ts
+      _ -> do
+        fs <- for factors $ \(NamedSolidityType { name: _name, type: t }) ->
+          let
+            n = unsafePartial $ fromJust _name
+          in
+            Tuple n <$> toPSType opts t
+        pure $ Gen.typeRecord fs Nothing
+
+toPSType
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> SolidityType
+  -> TidyM.CodegenT Void m (CST.Type Void)
+toPSType opts s = case s of
+  BasicType b -> basicToPSType opts b
+  v@(SolidityVector n a) -> unsafePartial $
+    if (noRecordsAtOrBelow v) then maybeWrap opts true do
+      let l = Gen.typeInt n
+      vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
+      x <- toPSType opts { withLeafWrappers = false } a
+      pure $ Gen.typeApp vector [ l, x ]
+    else do
+      let l = Gen.typeInt n
+      vector <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Vector")
+      x <- toPSType opts a
+      pure $ Gen.typeApp vector [ l, x ]
+  arr@(SolidityArray a) -> unsafePartial $
+    if noRecordsAtOrBelow arr then maybeWrap opts true do
+      t <- toPSType opts { withLeafWrappers = false } a
+      pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+    else do
+      t <- toPSType opts a
+      pure $ Gen.typeApp (Gen.typeCtor "Array") [ t ]
+
+-- thi is such a hack
+maybeWrap
+  :: forall m
+   . Monad m
+  => PSTypeOptions
+  -> Boolean
+  -> TidyM.CodegenT Void m (CST.Type Void)
+  -> TidyM.CodegenT Void m (CST.Type Void)
+maybeWrap opts noRecs t
+  | opts.withLeafWrappers && noRecs = unsafePartial do
+      _identity <- Gen.typeCtor <$> TidyM.importFrom "Data.Identity" (TidyM.importType "Identity")
+      _t <- t
+      pure $ Gen.typeApp _identity [ _t ]
+  | otherwise = t
+
+noRecordsAtOrBelow
+  :: SolidityType
+  -> Boolean
+noRecordsAtOrBelow = case _ of
+  BasicType (SolidityTuple factors) -> all (\(NamedSolidityType { name }) -> isNothing name) factors
+  BasicType _ -> true
+  SolidityVector _ a -> noRecordsAtOrBelow a
+  SolidityArray a -> noRecordsAtOrBelow a
 
 --------------------------------------------------------------------------------
+
+data FunType = Call | Send | Constructor
+
+type TypeSyn = { typeSynName :: String, typeSynType :: CST.Type Void }
+
+data FunIO
+  = FIONone
+  | FIOUnNamedTuple { len :: Int, asTuples :: CST.Type Void, type :: CST.Type Void }
+  | FIORecord { len :: Int, asTuples :: CST.Type Void, type :: CST.Type Void }
 
 -- | Data declaration
 data FunData =
   FunData
-    { signature :: String
-    , factorTypes :: Array (Tuple String (CST.Type Void))
-    , returnType :: CST.Type Void
-    , typeName :: String
-    , name :: String
+    { name :: String
+    , signature :: String
+    , funType :: FunType
+    , inputType :: FunIO
+    , inputTypeSyn :: TypeSyn
+    , returnType :: FunIO
+    , returnTypeSyn :: TypeSyn
     , solidityFunction :: SolidityFunction
     }
+
+makeFunData
+  :: forall m
+   . Monad m
+  => CodeOptions
+  -> SolidityFunction
+  -> TidyM.CodegenT Void m FunData
+makeFunData { exprPrefix } fun@(SolidityFunction f) = unsafePartial $ do
+  inputType <- mkFIO f.inputs
+  inputTypeSyn <- do
+    typeSynType <- funTypeSyn inputType
+    tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
+    s <-
+      if f.isConstructor then do
+        TidyM.importOpen "Prelude"
+        pure $ Gen.typeCtor "Void"
+      else pure $ Gen.typeString (toSignature fun)
+    pure
+      { typeSynName: "Fn" <> capitalize f.name <> "Input"
+      , typeSynType: Gen.typeApp tagged
+          [ s
+          , typeSynType
+          ]
+      }
+  returnType <- mkFIO f.outputs
+  returnTypeSyn <- do
+    typeSynType <- funTypeSyn returnType
+    pure
+      { typeSynName: "Fn" <> capitalize f.name <> "Output"
+      , typeSynType
+      }
+  pure $
+    FunData
+      { name: exprPrefix <> lowerCase f.name
+      , inputType
+      , inputTypeSyn
+      , funType: if f.constant then Call else if f.isConstructor then Constructor else Send
+      , signature: toSignature fun
+      , returnType
+      , returnTypeSyn
+      , solidityFunction: fun
+      }
+  where
+  mkFIO :: Array NamedSolidityType -> TidyM.CodegenT Void m FunIO
+  mkFIO args = case args of
+    [] -> pure FIONone
+    _ -> unsafePartial $
+      if all (\(NamedSolidityType fi) -> isJust fi.name) args then do
+        fields <- for args \(NamedSolidityType fi) -> do
+          _pst <- toPSType defaultPSTypeOpts fi.type
+          let n = unsafePartial $ fromJust fi.name
+          pure $ Tuple n _pst
+        factors <- for args \(NamedSolidityType fi) -> do
+          _pst <- toPSType { onlyTuples: true, withLeafWrappers: true } fi.type
+          let n = unsafePartial $ fromJust fi.name
+          tagInput (Tuple n _pst)
+        let tupleType = "Tuple" <> show (length args)
+        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+        pure $ FIORecord { len: length args, asTuples: Gen.typeApp tuple factors, type: Gen.typeRecord fields Nothing }
+      else do
+        ts <- for args \(NamedSolidityType fi) -> toPSType defaultPSTypeOpts fi.type
+        let tupleType = "Tuple" <> show (length args)
+        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+        let asTuples = Gen.typeApp tuple ts
+        pure case ts of
+          [ t ] -> FIOUnNamedTuple { len: length args, asTuples, type: t }
+          _ -> FIOUnNamedTuple { len: length ts, asTuples, type: asTuples }
+
+  funTypeSyn :: FunIO -> TidyM.CodegenT Void m (CST.Type Void)
+  funTypeSyn = case _ of
+    FIONone -> unsafePartial $ Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+    FIOUnNamedTuple t -> pure t.asTuples
+    FIORecord t -> pure t.asTuples
 
 tagInput
   :: forall m
@@ -85,181 +245,194 @@ tagInput (Tuple name _type) = unsafePartial $ do
   tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
   pure $ Gen.typeApp tagged [ Gen.typeString name, _type ]
 
-makeFunData
-  :: forall m
-   . Monad m
-  => CodeOptions
-  -> SolidityFunction
-  -> TidyM.CodegenT Void m FunData
-makeFunData { exprPrefix } fun@(SolidityFunction f) = do
-  factorTypes <- for f.inputs $ \(FunctionInput fi) -> do
-    ty <- toPSType fi.type
-    pure $ Tuple fi.name ty
-  returnType <- mkReturnType
-  pure $
-    FunData
-      { typeName: if isValidType f.name then capitalize $ f.name <> "Fn" else "FnT" <> f.name <> "Fn"
-      , factorTypes
-      , signature: toSignature fun
-      , returnType
-      , name: exprPrefix <> lowerCase f.name
-      , solidityFunction: fun
-      }
-  where
-
-  mkReturnType = unsafePartial do
-    web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "Web3")
-    if not f.constant then do
-      hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
-      pure $ Gen.typeApp web3 [ hexString ]
-    else do
-      callError <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "CallError")
-      _either <- Gen.typeCtor <$> TidyM.importFrom "Data.Either" (TidyM.importType "Either")
-      outputs <- for f.outputs toPSType
-      out <- case uncons outputs of
-        Nothing -> pure $ Gen.typeCtor "Unit"
-        Just { head, tail: [] } -> pure head
-        Just _ -> do
-          let tupleType = "Tuple" <> show (length outputs)
-          tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-          pure $ Gen.typeApp tuple outputs
-      pure $ Gen.typeApp web3
-        [ Gen.typeApp _either
-            [ callError
-            , out
-            ]
-        ]
-
-funTypeSyn :: forall m. Monad m => FunData -> TidyM.CodegenT Void m (CST.Declaration Void)
-funTypeSyn (FunData decl) = unsafePartial do
-  let
-    nArgs = length decl.factorTypes
-    SolidityFunction { isUnCurried, isConstructor } = decl.solidityFunction
-  tupleType <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType $ "Tuple" <> show nArgs)
-  ts <- for decl.factorTypes $ \factor ->
-    if isUnCurried then tagInput factor
-    else pure $ snd factor
-  tagged <- Gen.typeCtor <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importType "Tagged")
-  t <-
-    if isConstructor then do
-      TidyM.importOpen "Prelude"
-      pure $ Gen.typeCtor "Void"
-    else pure $ Gen.typeString decl.signature
-  pure
-    $ Gen.declType decl.typeName []
-    $ Gen.typeApp tagged
-        [ t
-        , Gen.typeApp tupleType ts
-        ]
-
 mkFunction
   :: forall m
    . Monad m
   => FunData
   -> TidyM.CodegenT Void m (Array (CST.Declaration Void))
 mkFunction fun@(FunData f) = unsafePartial do
-  let SolidityFunction { payable, constant, isConstructor } = f.solidityFunction
+  let SolidityFunction { payable } = f.solidityFunction
   _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
   payAmt <- Gen.typeCtor <$>
     if payable then TidyM.importFrom "Network.Ethereum.Web3.Types.TokenUnit" (TidyM.importType "MinorUnit")
     else TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "NoPay")
   let txOpts = Gen.typeApp _txOpts [ payAmt ]
-  case uncons f.factorTypes of
-    Nothing ->
-      if constant then mkNoArgsCall txOpts
-      else if isConstructor then do
-        hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
-        mkNoArgsSend [ txOpts, hexString ]
-      else mkNoArgsSend [ txOpts ]
-    Just { head, tail } -> do
-      if constant then mkArgsCall txOpts { firstFactor: head, restFactors: tail }
-      else if isConstructor then do
-        hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
-        mkArgsSend [ txOpts, hexString ] { firstFactor: head, restFactors: tail }
-      else mkArgsSend [ txOpts ] { firstFactor: head, restFactors: tail }
-  where
+  case f.funType of
+    Call -> do
+      sig <- mkCallSignature fun txOpts
+      call <- mkCall fun
+      pure $ [ sig, call ]
+    Send -> do
+      sig <- mkSendSignature fun txOpts
+      call <- mkSend fun
+      pure $ [ sig, call ]
+    Constructor -> do
+      sig <- mkConstructorSignature fun txOpts
+      call <- mkConstructor fun
+      pure $ [ sig, call ]
 
-  mkNoArgsSend args = unsafePartial do
-    let
-      sig = Gen.declSignature f.name (Gen.typeArrow args f.returnType)
-      SolidityFunction { isConstructor } = f.solidityFunction
-      vars = map (\i -> "x" <> show i) (1 .. length args)
-    expr <- do
-      sendTx <-
-        if isConstructor then Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
-        else Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
-      pure $
-        Gen.exprApp sendTx
-          ( map Gen.exprIdent vars `snoc`
-              Gen.exprTyped (Gen.exprApp tagged [ tupleC ]) (Gen.typeCtor f.typeName)
-          )
-    pure [ sig, Gen.declValue f.name (map Gen.binderVar vars) expr ]
-
-  mkArgsSend args factors = unsafePartial do
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    { sig, expr, vars } <-
-      if isUnCurried then do
-        let
-          sig =
-            let
-              ts = args `snoc` Gen.typeRecord f.factorTypes Nothing
-            in
-              Gen.declSignature f.name $ Gen.typeArrow ts f.returnType
-          vars = map (\i -> "x" <> show i) (1 .. (length args + 1))
-        expr <- do
-          uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
-          let
-            helperName = f.name <> "'"
-            idents = map Gen.exprIdent vars
-
-          TidyM.importOpen "Prelude"
-          pure $
-            Gen.exprOp (Gen.exprApp uncurryFields [ unsafePartial $ fromJust $ Array.last idents ])
-              [ Gen.binaryOp "$" (Gen.exprApp (Gen.exprIdent helperName) (Array.take (length args) idents))
-              ]
-        pure { sig, expr, vars }
+mkConstructor
+  :: forall m
+   . Monad m
+  => FunData
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkConstructor (FunData f) = unsafePartial do
+  let
+    vars = [ "bytecode", "txOpts" ]
+    x = "x"
+    binderVars = (Gen.binderVar <$> vars) <> case f.inputType of
+      FIONone -> []
+      _ -> [ Gen.binderVar x ]
+  tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
+  sendArg <- case f.inputType of
+    FIONone -> do
+      tuple0 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
+      pure $ Gen.exprTyped (Gen.exprApp tagged [ tuple0 ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIOUnNamedTuple { len } ->
+      if len > 1 then
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprIdent x ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
       else do
-        let
-          sig =
-            let
-              ts = args <> map snd f.factorTypes
-            in
-              Gen.declSignature f.name $ Gen.typeArrow ts f.returnType
-          vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + length args))
-        expr <- do
-          let
-            helperName = f.name <> "'"
-            idents = map Gen.exprIdent vars
-          pure $ Gen.exprApp (Gen.exprIdent helperName) idents
-        pure { sig, expr, vars }
-    helper <- mkHelperFunction fun factors
-    pure
-      [ sig
-      , Gen.declValue f.name (Gen.binderVar <$> vars)
-          (Gen.exprWhere expr helper)
-      ]
+        tuple1 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple1" "Tuple1")
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprApp tuple1 [ Gen.exprIdent x ] ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIORecord _ -> do
+      fromRecord <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "fromRecord")
+      pure $ Gen.exprTyped
+        (Gen.exprApp tagged [ Gen.exprApp fromRecord [ Gen.exprIdent x ] ])
+        (Gen.typeCtor f.inputTypeSyn.typeSynName)
+  deployContract <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
+  let sendExpr = Gen.exprApp deployContract ((Gen.exprIdent <$> vars) `snoc` sendArg)
+  pure $ Gen.declValue f.name binderVars sendExpr
 
-  mkNoArgsCall txOpts = unsafePartial do
-    chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
+mkConstructorSignature
+  :: forall m
+   . Monad m
+  => FunData
+  -> CST.Type Void
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkConstructorSignature (FunData f) txOpts = unsafePartial do
+  let
+    inputType = case f.inputType of
+      FIONone -> Nothing
+      FIOUnNamedTuple { type: t } -> Just t
+      FIORecord { type: t } -> Just t
+  web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Web3")
+  hxString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+  let
+    returnType = Gen.typeApp web3 [ hxString ]
+    args = [ txOpts, hxString ] <> maybe [] pure inputType
+  pure $ Gen.declSignature f.name (Gen.typeArrow args returnType)
+
+mkSendSignature
+  :: forall m
+   . Monad m
+  => FunData
+  -> CST.Type Void
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkSendSignature (FunData f) txOpts = unsafePartial do
+  let
+    inputType = case f.inputType of
+      FIONone -> Nothing
+      FIOUnNamedTuple { type: t } -> Just t
+      FIORecord { type: t } -> Just t
+  web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Web3")
+  hxString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
+  let
+    returnType = Gen.typeApp web3 [ hxString ]
+    args = [ txOpts ] <> maybe [] pure inputType
+  pure $ Gen.declSignature f.name (Gen.typeArrow args returnType)
+
+mkSend
+  :: forall m
+   . Monad m
+  => FunData
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkSend (FunData f) = unsafePartial do
+  let
+    vars = [ "txOpts" ]
+    x = "x"
+    binderVars = (Gen.binderVar <$> vars) <> case f.inputType of
+      FIONone -> []
+      _ -> [ Gen.binderVar x ]
+  tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
+  sendArg <- case f.inputType of
+    FIONone -> do
+      tuple0 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
+      pure $ Gen.exprTyped (Gen.exprApp tagged [ tuple0 ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIOUnNamedTuple { len } ->
+      if len > 1 then
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprIdent x ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+      else do
+        tuple1 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple1" "Tuple1")
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprApp tuple1 [ Gen.exprIdent x ] ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIORecord _ -> do
+      fromRecord <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "fromRecord")
+      pure $ Gen.exprTyped
+        (Gen.exprApp tagged [ Gen.exprApp fromRecord [ Gen.exprIdent x ] ])
+        (Gen.typeCtor f.inputTypeSyn.typeSynName)
+  sendTx <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
+  let sendExpr = Gen.exprApp sendTx ((Gen.exprIdent <$> vars) `snoc` sendArg)
+  pure $ Gen.declValue f.name binderVars sendExpr
+
+mkCallSignature
+  :: forall m
+   . Monad m
+  => FunData
+  -> CST.Type Void
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkCallSignature (FunData f) txOpts = unsafePartial do
+  let
+    inputType = case f.inputType of
+      FIONone -> Nothing
+      FIOUnNamedTuple { type: t } -> Just t
+      FIORecord { type: t } -> Just t
+  returnType <- do
+    web3 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importType "Web3")
+    callError <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "CallError")
+    _either <- Gen.typeCtor <$> TidyM.importFrom "Data.Either" (TidyM.importType "Either")
     let
-      sig = Gen.declSignature f.name (Gen.typeArrow (txOpts : [ chainCursor ]) f.returnType)
-      vars = map (\i -> "x" <> show i) [ 1, 2 ]
-    expr <- do
-      call <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "call")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
-      let
-        idents = map Gen.exprIdent vars
-        SolidityFunction { outputs } = f.solidityFunction
-        callExpr =
-          Gen.exprApp call
-            [ unsafePartial $ unsafeIndex idents 0
-            , unsafePartial $ unsafeIndex idents 1
-            , Gen.exprTyped (Gen.exprApp tagged [ tupleC ]) (Gen.typeCtor f.typeName)
-            ]
-      if length outputs == 1 then do
+      _t = case f.returnType of
+        FIONone -> Gen.typeCtor "Unit"
+        FIOUnNamedTuple { type: t } -> t
+        FIORecord { type: t } -> t
+    pure $ Gen.typeApp web3 [ Gen.typeApp _either [ callError, _t ] ]
+  chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
+  let args = [ txOpts, chainCursor ] <> maybe [] pure inputType
+  pure $ Gen.declSignature f.name (Gen.typeArrow args returnType)
+
+mkCall
+  :: forall m
+   . Monad m
+  => FunData
+  -> TidyM.CodegenT Void m (CST.Declaration Void)
+mkCall (FunData f) = unsafePartial do
+  let
+    vars = [ "txOpts", "chainCursor" ]
+    x = "x"
+    binderVars = (Gen.binderVar <$> vars) <> case f.inputType of
+      FIONone -> []
+      _ -> [ Gen.binderVar x ]
+  tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
+  callArg <- case f.inputType of
+    FIONone -> do
+      tuple0 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple0" "Tuple0")
+      pure $ Gen.exprTyped (Gen.exprApp tagged [ tuple0 ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIOUnNamedTuple { len } ->
+      if len > 1 then
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprIdent x ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+      else do
+        tuple1 <- Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor "Tuple1" "Tuple1")
+        pure $ Gen.exprTyped (Gen.exprApp tagged [ Gen.exprApp tuple1 [ Gen.exprIdent x ] ]) (Gen.typeCtor f.inputTypeSyn.typeSynName)
+    FIORecord _ -> do
+      fromRecord <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "fromRecord")
+      pure $ Gen.exprTyped
+        (Gen.exprApp tagged [ Gen.exprApp fromRecord [ Gen.exprIdent x ] ])
+        (Gen.typeCtor f.inputTypeSyn.typeSynName)
+  call <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "call")
+  let callExpr = Gen.exprApp call ((Gen.exprIdent <$> vars) `snoc` callArg)
+  expr <- case f.returnType of
+    FIONone -> pure callExpr
+    FIOUnNamedTuple { len } ->
+      if len == 1 then do
         untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
         TidyM.importOpen "Prelude"
         pure $
@@ -267,161 +440,19 @@ mkFunction fun@(FunData f) = unsafePartial do
             [ Gen.binaryOp "<$>" callExpr
             ]
       else pure callExpr
-    pure
-      [ sig
-      , Gen.declValue f.name (map Gen.binderVar vars) expr
-      ]
-
-  mkArgsCall txOpts factors = unsafePartial do
-    chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    { expr, sig, vars } <-
-      if isUnCurried then do
-        let
-          sig =
-            let
-              ts = txOpts : chainCursor : [ Gen.typeRecord f.factorTypes Nothing ]
-            in
-              Gen.declSignature f.name (Gen.typeArrow ts f.returnType)
-          vars = map (\i -> "x" <> show i) [ 1, 2, 3 ]
-        expr <- do
-          uncurryFields <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Contract.Internal" (TidyM.importValue "uncurryFields")
-          let helperName = f.name <> "'"
-          TidyM.importOpen "Prelude"
-          pure $
-            Gen.exprOp (Gen.exprApp uncurryFields [ Gen.exprIdent $ unsafePartial $ unsafeIndex vars 2 ])
-              [ Gen.binaryOp "$"
-                  ( Gen.exprApp (Gen.exprIdent helperName)
-                      [ Gen.exprIdent $ unsafePartial $ unsafeIndex vars 0
-                      , Gen.exprIdent $ unsafePartial $ unsafeIndex vars 1
-                      ]
-                  )
-              ]
-        pure { sig, expr, vars }
-      else do
-        let
-          sig =
-            let
-              ts = txOpts : chainCursor : map snd f.factorTypes
-            in
-              Gen.declSignature f.name (Gen.typeArrow ts f.returnType)
-          vars = map (\i -> "x" <> show i) (1 .. (length f.factorTypes + 2))
-        expr <- do
-          let
-            helperName = f.name <> "'"
-            idents = map Gen.exprIdent vars
-          pure $ Gen.exprApp (Gen.exprIdent helperName) idents
-        pure { sig, expr, vars }
-    helper <- mkHelperFunction fun factors
-    pure
-      [ sig
-      , Gen.declValue f.name (map Gen.binderVar vars)
-          ( Gen.exprWhere expr helper
-          )
-      ]
-
-mkHelperFunction
-  :: forall m
-   . Monad m
-  => FunData
-  -> { firstFactor :: Tuple String (CST.Type Void)
-     , restFactors :: Array (Tuple String (CST.Type Void))
-     }
-  -> TidyM.CodegenT Void m (Array (CST.LetBinding Void))
-mkHelperFunction (FunData f) { firstFactor, restFactors } = unsafePartial do
-  let SolidityFunction { constant, payable, isConstructor } = f.solidityFunction
-  _txOpts <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "TransactionOptions")
-  payAmt <- Gen.typeCtor <$>
-    if payable then TidyM.importFrom "Network.Ethereum.Web3.Types.TokenUnit" (TidyM.importType "MinorUnit")
-    else TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "NoPay")
-  let
-    txOpts = Gen.typeApp _txOpts [ payAmt ]
-    helperName = f.name <> "'"
-  if constant then mkCall helperName txOpts
-  else if isConstructor then do
-    hexString <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "HexString")
-    mkSend helperName [ txOpts, hexString ]
-  else mkSend helperName [ txOpts ]
-  where
-  -- NOTE: there is a lot of c/p between mkSend and mkCall but they ways in which they are different is just
-  -- flat out annoying
-  mkSend helperName args = unsafePartial do
-    let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + length args))
-    expr <- do
-      let SolidityFunction { isConstructor } = f.solidityFunction
-      sendTx <-
-        if isConstructor then Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "deployContract")
-        else Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "sendTx")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- do
-        let tupleType = "Tuple" <> show (length f.factorTypes)
-        Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
-      let idents = map Gen.exprIdent vars
+    FIORecord _ -> do
+      toRecord <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "toRecord")
+      _either <- Gen.typeCtor <$> TidyM.importFrom "Data.Either" (TidyM.importType "Either")
       TidyM.importOpen "Prelude"
-      pure $ Gen.exprApp sendTx
-        ( Array.take (length args) idents `snoc`
-            Gen.exprTyped
-              ( Gen.exprOp tagged
-                  [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop (length args) idents)
-                  ]
-              )
-              (Gen.typeCtor f.typeName)
-        )
-
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    firstFactor' <-
-      if isUnCurried then tagInput firstFactor
-      else pure $ snd firstFactor
-    restFactors' <- for restFactors $ \factor ->
-      if isUnCurried then tagInput factor
-      else pure $ snd factor
-    pure
-      [ Gen.letSignature helperName $ Gen.typeArrow (args <> (firstFactor' : restFactors')) f.returnType
-      , Gen.letValue helperName (map Gen.binderVar vars) expr
-      ]
-
-  mkCall helperName txOpts = unsafePartial do
-    chainCursor <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Types" (TidyM.importType "ChainCursor")
-    -- the 3 comes from TxOpts -> ChainCursor -> firstFactor -> restFactors ->  returnType
-    let vars = map (\i -> "_x" <> show i) (1 .. (length f.factorTypes + 2))
-    expr <- do
-      call <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3" (TidyM.importValue "call")
-      tagged <- Gen.exprIdent <$> TidyM.importFrom "Data.Functor.Tagged" (TidyM.importValue "tagged")
-      tupleC <- do
-        let tupleType = "Tuple" <> show (length f.factorTypes)
-        Gen.exprCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importCtor tupleType tupleType)
-      TidyM.importOpen "Prelude"
-      let
-        idents = map Gen.exprIdent vars
-        SolidityFunction { outputs } = f.solidityFunction
-        callExpr = Gen.exprApp call
-          [ unsafePartial $ unsafeIndex idents 0
-          , unsafePartial $ unsafeIndex idents 1
-          , Gen.exprTyped
-              ( Gen.exprOp tagged
-                  [ Gen.binaryOp "$" $ Gen.exprApp tupleC (Array.drop 2 idents)
-                  ]
-              )
-              (Gen.typeCtor f.typeName)
-          ]
-      if length outputs == 1 then do
-        untuple <- Gen.exprIdent <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importValue "unTuple1")
-        pure $
-          Gen.exprOp (Gen.exprApp (Gen.exprIdent "map") [ untuple ])
-            [ Gen.binaryOp "<$>" callExpr
-            ]
-      else pure callExpr
-    let SolidityFunction { isUnCurried } = f.solidityFunction
-    firstFactor' <-
-      if isUnCurried then tagInput firstFactor
-      else pure $ snd firstFactor
-    restFactors' <- for restFactors $ \factor ->
-      if isUnCurried then tagInput factor
-      else pure $ snd factor
-    pure
-      [ Gen.letSignature helperName $ Gen.typeArrow (txOpts : chainCursor : firstFactor' : restFactors') f.returnType
-      , Gen.letValue helperName (map Gen.binderVar vars) expr
-      ]
+      pure $ Gen.exprDo
+        [ Gen.doBind
+            ( Gen.binderTyped (Gen.binderVar "eRes")
+                (Gen.typeApp _either [ Gen.typeWildcard, Gen.typeCtor f.returnTypeSyn.typeSynName ])
+            )
+            callExpr
+        ]
+        (Gen.exprApp (Gen.exprIdent "pure") [ Gen.exprApp (Gen.exprIdent "map") [ toRecord, Gen.exprIdent "eRes" ] ])
+  pure $ Gen.declValue f.name binderVars expr
 
 --------------------------------------------------------------------------------
 
@@ -444,14 +475,17 @@ mkEventData e@(SolidityEvent ev) = do
     is = filter (\(IndexedSolidityValue sv) -> sv.indexed) ev.inputs
     nis = filter (\(IndexedSolidityValue sv) -> not sv.indexed) ev.inputs
   indexedTypes <- for is \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType { onlyTuples: true, withLeafWrappers: true } t
+    pure $ Tuple (fromMaybe "" name) t
   nonIndexedTypes <- for nis \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType { onlyTuples: true, withLeafWrappers: true } t
+    pure $ Tuple (fromMaybe "" name) t
   recordType <- for ev.inputs \(IndexedSolidityValue sv) -> do
-    t <- toPSType sv.type
-    pure $ Tuple sv.name t
+    let NamedSolidityType { name, type: t } = sv.type
+    t <- toPSType defaultPSTypeOpts t
+    pure $ Tuple (fromMaybe "" name) t
   pure $ EventData
     { constructor: if isValidType (capitalize ev.name) then capitalize ev.name else "EvT" <> ev.name
     , indexedTypes
@@ -594,7 +628,6 @@ instance Monad m => Code (Abi Identity) m where
             , constant: false
             , payable: false
             , isConstructor: true
-            , isUnCurried: c.isUnCurried
             }
         in
           codegenFunction f
@@ -603,10 +636,11 @@ instance Monad m => Code (Abi Identity) m where
     pure $ concat codes
     where
     codegenFunction f = do
-      funData <- makeFunData opts f
-      syn <- funTypeSyn funData
+      funData@(FunData { inputTypeSyn, returnTypeSyn }) <- makeFunData opts f
+      let inputSyn = unsafePartial $ Gen.declType inputTypeSyn.typeSynName [] inputTypeSyn.typeSynType
+      let returnSyn = unsafePartial $ Gen.declType returnTypeSyn.typeSynName [] returnTypeSyn.typeSynType
       fun <- mkFunction funData
-      pure $ syn : fun
+      pure $ inputSyn : returnSyn : fun
 
 --------------------------------------------------------------------------------
 
