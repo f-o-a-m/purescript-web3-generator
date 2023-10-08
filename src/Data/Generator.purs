@@ -3,7 +3,7 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), BasicSolidityType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
-import Data.Array (concat, filter, head, length, null, replicate, snoc, zip, (..), (:))
+import Data.Array (concat, filter, length, null, replicate, snoc, (:))
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (un)
@@ -13,7 +13,7 @@ import Data.Tuple (Tuple(..))
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
-import Partial.Unsafe (unsafePartial)
+import Partial.Unsafe (unsafeCrashWith, unsafePartial)
 import PureScript.CST.Types as CST
 import Tidy.Codegen as Gen
 import Tidy.Codegen.Monad as TidyM
@@ -63,14 +63,7 @@ basicToPSType opts a = case a of
   tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup) do
     if null factors then Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
     else case for_ factors \(NamedSolidityType { name }) -> name of
-      Nothing ->
-        let
-          namedFactors = flip map (zip (1 .. length factors) factors) \(Tuple n f@(NamedSolidityType { name, type: t })) ->
-            case name of
-              Nothing -> NamedSolidityType { name: Just ("_" <> show n), type: t }
-              Just _ -> f
-        in
-          basicToPSType opts (SolidityTuple namedFactors)
+      Nothing -> unsafeCrashWith "Names should have been proved by fallback method which uses coordinates"
       _ | opts.onlyTuples -> do
         let tupleType = "Tuple" <> show (length factors)
         tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
