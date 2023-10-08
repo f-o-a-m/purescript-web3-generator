@@ -1,0 +1,254 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "chainId",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "account",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes32",
+        "name": "imageId",
+        "type": "bytes32"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes",
+        "name": "input",
+        "type": "bytes"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "callbackContract",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "bytes4",
+        "name": "functionSelector",
+        "type": "bytes4"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint64",
+        "name": "gasLimit",
+        "type": "uint64"
+      }
+    ],
+    "name": "CallbackRequest",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bytes",
+            "name": "seal",
+            "type": "bytes"
+          },
+          {
+            "internalType": "bytes32",
+            "name": "postStateDigest",
+            "type": "bytes32"
+          }
+        ],
+        "internalType": "struct CallbackAuthorization",
+        "name": "auth",
+        "type": "tuple"
+      }
+    ],
+    "name": "callbackIsAuthorized",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "bytes",
+                "name": "seal",
+                "type": "bytes"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "postStateDigest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct CallbackAuthorization",
+            "name": "auth",
+            "type": "tuple"
+          },
+          {
+            "internalType": "address",
+            "name": "callbackContract",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "internalType": "uint64",
+            "name": "gasLimit",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct Callback",
+        "name": "callback",
+        "type": "tuple"
+      }
+    ],
+    "name": "invokeCallback",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "components": [
+          {
+            "components": [
+              {
+                "internalType": "bytes",
+                "name": "seal",
+                "type": "bytes"
+              },
+              {
+                "internalType": "bytes32",
+                "name": "postStateDigest",
+                "type": "bytes32"
+              }
+            ],
+            "internalType": "struct CallbackAuthorization",
+            "name": "auth",
+            "type": "tuple"
+          },
+          {
+            "internalType": "address",
+            "name": "callbackContract",
+            "type": "address"
+          },
+          {
+            "internalType": "bytes",
+            "name": "payload",
+            "type": "bytes"
+          },
+          {
+            "internalType": "uint64",
+            "name": "gasLimit",
+            "type": "uint64"
+          }
+        ],
+        "internalType": "struct Callback[]",
+        "name": "callbacks",
+        "type": "tuple[]"
+      }
+    ],
+    "name": "invokeCallbacks",
+    "outputs": [
+      {
+        "internalType": "bool[]",
+        "name": "invocationResults",
+        "type": "bool[]"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes",
+        "name": "payload",
+        "type": "bytes"
+      }
+    ],
+    "name": "parsePayload",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "",
+        "type": "bytes"
+      }
+    ],
+    "stateMutability": "pure",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "imageId",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes",
+        "name": "input",
+        "type": "bytes"
+      },
+      {
+        "internalType": "address",
+        "name": "callbackContract",
+        "type": "address"
+      },
+      {
+        "internalType": "bytes4",
+        "name": "functionSelector",
+        "type": "bytes4"
+      },
+      {
+        "internalType": "uint64",
+        "name": "gasLimit",
+        "type": "uint64"
+      }
+    ],
+    "name": "requestCallback",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

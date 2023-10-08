@@ -11,7 +11,7 @@ import Data.Argonaut.Decode ((.:))
 import Data.Argonaut.Decode.Class (class DecodeJson, decodeJson)
 import Data.Argonaut.Decode.Error (JsonDecodeError(..), printJsonDecodeError)
 import Data.Argonaut.Encode.Class (encodeJson)
-import Data.Array (fromFoldable, intercalate)
+import Data.Array (fromFoldable, intercalate, length, zip, (..))
 import Data.Bifunctor (lmap)
 import Data.Either (Either(..), either)
 import Data.Foldable (foldr)
@@ -24,6 +24,7 @@ import Data.Show.Generic (genericShow)
 import Data.String.CodeUnits (fromCharArray)
 import Data.TacitString as TacitString
 import Data.Traversable (traverse)
+import Data.Tuple (Tuple(..))
 import StringParser (Parser, fail, runParser, try)
 import StringParser.CodePoints (anyDigit, string, char, eof)
 import StringParser.Combinators (choice, manyTill, many1, optionMaybe)
@@ -108,7 +109,7 @@ instance DecodeJson SolidityType where
       Right solidityTuple -> do
         components <- obj .: "components"
         factors <- traverse decodeJson components
-        pure $ solidityTuple factors
+        pure $ solidityTuple $ withMissingLabels factors
 
 instance Format SolidityType where
   format s = case s of
@@ -287,8 +288,8 @@ instance DecodeJson SolidityFunction where
     cp <- parseStateMutability <|> parseConstantPayableFields <|> fallback
     pure $ SolidityFunction
       { name: nm
-      , inputs: is
-      , outputs: os
+      , inputs: withMissingLabels is
+      , outputs: withMissingLabels os
       , constant: cp.constant
       , payable: cp.payable
       , isConstructor: false
@@ -342,7 +343,7 @@ instance DecodeJson SolidityEvent where
     a <- obj .: "anonymous"
     pure $ SolidityEvent
       { name: nm
-      , inputs: is
+      , inputs: withMissingLabels' is
       , anonymous: a
       }
 
@@ -372,7 +373,7 @@ instance DecodeJson SolidityConstructor where
     obj <- decodeJson json
     is <- obj .: "inputs"
     pure $ SolidityConstructor
-      { inputs: is }
+      { inputs: withMissingLabels is }
 
 --------------------------------------------------------------------------------
 -- | ABI
@@ -426,3 +427,26 @@ instance
 
 instance Show AbiDecodeError where
   show (AbiDecodeError r) = "(AbiDecodeError " <> show r <> ")"
+
+withMissingLabels
+  :: Array NamedSolidityType
+  -> Array NamedSolidityType
+withMissingLabels as = flip map (zip (1 .. length as) as) \(Tuple n f@(NamedSolidityType { name, type: _t })) ->
+  case name of
+    Nothing -> NamedSolidityType { name: Just ("_" <> show n), type: _t }
+    Just _ -> f
+
+withMissingLabels'
+  :: Array IndexedSolidityValue
+  -> Array IndexedSolidityValue
+withMissingLabels' as = flip map (zip (1 .. length as) as) \(Tuple n f@(IndexedSolidityValue { type: t, indexed })) ->
+  let
+    NamedSolidityType { name, type: _t } = t
+  in
+    case name of
+      Nothing ->
+        let
+          nt' = NamedSolidityType { name: Just ("_" <> show n), type: _t }
+        in
+          IndexedSolidityValue { type: nt', indexed }
+      Just _ -> f
