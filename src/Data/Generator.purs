@@ -3,12 +3,12 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), BasicSolidityType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
-import Data.Array (concat, filter, head, length, replicate, snoc, (:))
+import Data.Array (concat, filter, head, length, null, replicate, snoc, zip, (..), (:))
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (un)
 import Data.String (drop, joinWith, take, toLower, toUpper)
-import Data.Traversable (all, for)
+import Data.Traversable (all, for, for_)
 import Data.Tuple (Tuple(..))
 import Network.Ethereum.Core.HexString (fromByteString)
 import Network.Ethereum.Core.Keccak256 (keccak256)
@@ -61,23 +61,22 @@ basicToPSType opts a = case a of
   SolidityBytesD -> unsafePartial $ maybeWrap opts true $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
   tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup) do
-    case head factors of
+    if null factors then Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+    else case for_ factors \(NamedSolidityType { name }) -> name of
       Nothing ->
-        ( Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
-        )
-      Just (NamedSolidityType { name: Nothing }) -> do
-        -- assume that none of them have a name if the first doesn't
-        let tupleType = "Tuple" <> show (length factors)
-        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-        ts <- for factors \(NamedSolidityType { type: t }) -> toPSType opts t
-        pure $ Gen.typeApp tuple ts
+        let
+          namedFactors = flip map (zip (1 .. length factors) factors) \(Tuple n f@(NamedSolidityType { name, type: t })) ->
+            case name of
+              Nothing -> NamedSolidityType { name: Just ("_" <> show n), type: t }
+              Just _ -> f
+        in
+          basicToPSType opts (SolidityTuple namedFactors)
       _ | opts.onlyTuples -> do
         let tupleType = "Tuple" <> show (length factors)
         tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
         ts <- for factors \(NamedSolidityType { name: _name, type: t }) -> do
           let n = unsafePartial $ fromJust _name
           _pst <- toPSType opts t
-
           tagInput (Tuple n _pst)
         pure $ Gen.typeApp tuple ts
       _ -> do
