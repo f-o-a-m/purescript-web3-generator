@@ -3,7 +3,7 @@ module Data.Generator where
 import Prelude
 
 import Data.AbiParser (Abi(..), AbiType(..), BasicSolidityType(..), IndexedSolidityValue(..), NamedSolidityType(..), SolidityConstructor(..), SolidityEvent(..), SolidityFunction(..), SolidityType(..), format)
-import Data.Array (concat, filter, length, null, replicate, snoc, (:))
+import Data.Array (concat, filter, length, replicate, snoc, (:))
 import Data.Identity (Identity(..))
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust, isNothing, maybe)
 import Data.Newtype (un)
@@ -60,25 +60,30 @@ basicToPSType opts a = case a of
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
   SolidityBytesD -> unsafePartial $ maybeWrap opts true $
     Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
-  tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup) do
-    if null factors then Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
-    else case for_ factors \(NamedSolidityType { name }) -> name of
-      Nothing -> unsafeCrashWith "Names should have been proved by fallback method which uses coordinates"
-      _ | opts.onlyTuples -> do
-        let tupleType = "Tuple" <> show (length factors)
-        tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
-        ts <- for factors \(NamedSolidityType { name: _name, type: t }) -> do
-          let n = unsafePartial $ fromJust _name
-          _pst <- toPSType opts t
-          tagInput (Tuple n _pst)
-        pure $ Gen.typeApp tuple ts
-      _ -> do
-        fs <- for factors $ \(NamedSolidityType { name: _name, type: t }) ->
-          let
-            n = unsafePartial $ fromJust _name
-          in
-            Tuple n <$> toPSType opts t
-        pure $ Gen.typeRecord fs Nothing
+  tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup)
+    case factors of
+      [] -> Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
+      [ NamedSolidityType { name: Nothing, type: t } ] -> do
+        _t <- toPSType opts t
+        tuple1 <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple1")
+        pure $ Gen.typeApp tuple1 [ _t ]
+      _ -> case for_ factors \(NamedSolidityType { name }) -> name of
+        Nothing -> unsafeCrashWith "Names should have been proved by fallback method which uses coordinates"
+        _ | opts.onlyTuples -> do
+          let tupleType = "Tuple" <> show (length factors)
+          tuple <- Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType tupleType)
+          ts <- for factors \(NamedSolidityType { name: _name, type: t }) -> do
+            let n = unsafePartial $ fromJust _name
+            _pst <- toPSType opts t
+            tagInput (Tuple n _pst)
+          pure $ Gen.typeApp tuple ts
+        _ -> do
+          fs <- for factors $ \(NamedSolidityType { name: _name, type: t }) ->
+            let
+              n = unsafePartial $ fromJust _name
+            in
+              Tuple n <$> toPSType opts t
+          pure $ Gen.typeRecord fs Nothing
 
 toPSType
   :: forall m

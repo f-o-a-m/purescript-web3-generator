@@ -431,22 +431,28 @@ instance Show AbiDecodeError where
 withMissingLabels
   :: Array NamedSolidityType
   -> Array NamedSolidityType
-withMissingLabels as = flip map (zip (1 .. length as) as) \(Tuple n f@(NamedSolidityType { name, type: _t })) ->
-  case name of
-    Nothing -> NamedSolidityType { name: Just ("_" <> show n), type: _t }
-    Just _ -> f
+withMissingLabels as = case as of
+  [] -> []
+  [ x ] -> [ x ]
+  _ -> flip map (zip (1 .. length as) as) \(Tuple n f@(NamedSolidityType { name, type: _t })) ->
+    case name of
+      Nothing -> NamedSolidityType { name: Just ("_" <> show n), type: _t }
+      Just _ -> f
 
 withMissingLabels'
   :: Array IndexedSolidityValue
   -> Array IndexedSolidityValue
-withMissingLabels' as = flip map (zip (1 .. length as) as) \(Tuple n f@(IndexedSolidityValue { type: t, indexed })) ->
-  let
-    NamedSolidityType { name, type: _t } = t
-  in
-    case name of
-      Nothing ->
-        let
-          nt' = NamedSolidityType { name: Just ("_" <> show n), type: _t }
-        in
-          IndexedSolidityValue { type: nt', indexed }
-      Just _ -> f
+withMissingLabels' as = case as of
+  [] -> []
+  [ x ] -> [ x ]
+  _ -> flip map (zip (1 .. length as) as) \(Tuple n f@(IndexedSolidityValue { type: t, indexed })) ->
+    let
+      NamedSolidityType { name, type: _t } = t
+    in
+      case name of
+        Nothing ->
+          let
+            nt' = NamedSolidityType { name: Just ("_" <> show n), type: _t }
+          in
+            IndexedSolidityValue { type: nt', indexed }
+        Just _ -> f
