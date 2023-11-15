@@ -1,0 +1,720 @@
+[
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS1",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            }
+        ],
+        "internalType": "struct StructReturns.S1",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS1AndS5",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            }
+        ],
+        "internalType": "struct StructReturns.S1",
+        "name": "",
+        "type": "tuple"
+        },
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            },
+            {
+            "internalType": "bytes20",
+            "name": "e",
+            "type": "bytes20"
+            }
+        ],
+        "internalType": "struct StructReturns.S5",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS1AndS5Named",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            }
+        ],
+        "internalType": "struct StructReturns.S1",
+        "name": "someS1",
+        "type": "tuple"
+        },
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            },
+            {
+            "internalType": "bytes20",
+            "name": "e",
+            "type": "bytes20"
+            }
+        ],
+        "internalType": "struct StructReturns.S5",
+        "name": "someS5",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS2",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            }
+        ],
+        "internalType": "struct StructReturns.S2",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS2A",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            }
+        ],
+        "internalType": "struct StructReturns.S2A",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS3",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            }
+        ],
+        "internalType": "struct StructReturns.S3",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS3A",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "address",
+            "name": "b",
+            "type": "address"
+            },
+            {
+            "internalType": "uint256",
+            "name": "c",
+            "type": "uint256"
+            }
+        ],
+        "internalType": "struct StructReturns.S3A",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS4",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            }
+        ],
+        "internalType": "struct StructReturns.S4",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS4A",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "address",
+            "name": "a",
+            "type": "address"
+            },
+            {
+            "internalType": "int256",
+            "name": "b",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "c",
+            "type": "uint256"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            }
+        ],
+        "internalType": "struct StructReturns.S4A",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS5",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            },
+            {
+            "internalType": "bytes20",
+            "name": "e",
+            "type": "bytes20"
+            }
+        ],
+        "internalType": "struct StructReturns.S5",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS5Named",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            },
+            {
+            "internalType": "bytes20",
+            "name": "e",
+            "type": "bytes20"
+            }
+        ],
+        "internalType": "struct StructReturns.S5",
+        "name": "someS5",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "k",
+        "type": "bytes32"
+        }
+    ],
+    "name": "getS5WithKey",
+    "outputs": [
+        {
+        "components": [
+            {
+            "internalType": "int256",
+            "name": "a",
+            "type": "int256"
+            },
+            {
+            "internalType": "uint256",
+            "name": "b",
+            "type": "uint256"
+            },
+            {
+            "internalType": "address",
+            "name": "c",
+            "type": "address"
+            },
+            {
+            "internalType": "uint96",
+            "name": "d",
+            "type": "uint96"
+            },
+            {
+            "internalType": "bytes20",
+            "name": "e",
+            "type": "bytes20"
+            }
+        ],
+        "internalType": "struct StructReturns.S5",
+        "name": "",
+        "type": "tuple"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s1s",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s2as",
+    "outputs": [
+        {
+        "internalType": "uint96",
+        "name": "d",
+        "type": "uint96"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s2s",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        },
+        {
+        "internalType": "uint256",
+        "name": "b",
+        "type": "uint256"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s3as",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        },
+        {
+        "internalType": "address",
+        "name": "b",
+        "type": "address"
+        },
+        {
+        "internalType": "uint256",
+        "name": "c",
+        "type": "uint256"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s3s",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        },
+        {
+        "internalType": "uint256",
+        "name": "b",
+        "type": "uint256"
+        },
+        {
+        "internalType": "address",
+        "name": "c",
+        "type": "address"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s4as",
+    "outputs": [
+        {
+        "internalType": "address",
+        "name": "a",
+        "type": "address"
+        },
+        {
+        "internalType": "int256",
+        "name": "b",
+        "type": "int256"
+        },
+        {
+        "internalType": "uint256",
+        "name": "c",
+        "type": "uint256"
+        },
+        {
+        "internalType": "uint96",
+        "name": "d",
+        "type": "uint96"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s4s",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        },
+        {
+        "internalType": "uint256",
+        "name": "b",
+        "type": "uint256"
+        },
+        {
+        "internalType": "address",
+        "name": "c",
+        "type": "address"
+        },
+        {
+        "internalType": "uint96",
+        "name": "d",
+        "type": "uint96"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    },
+    {
+    "inputs": [
+        {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+        }
+    ],
+    "name": "s5s",
+    "outputs": [
+        {
+        "internalType": "int256",
+        "name": "a",
+        "type": "int256"
+        },
+        {
+        "internalType": "uint256",
+        "name": "b",
+        "type": "uint256"
+        },
+        {
+        "internalType": "address",
+        "name": "c",
+        "type": "address"
+        },
+        {
+        "internalType": "uint96",
+        "name": "d",
+        "type": "uint96"
+        },
+        {
+        "internalType": "bytes20",
+        "name": "e",
+        "type": "bytes20"
+        }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+    }
+]
