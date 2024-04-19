@@ -8,7 +8,7 @@ let eth-core-deps =
 
 let web3-deps =
       https://raw.githubusercontent.com/f-o-a-m/purescript-web3/master/packages.dhall
-        sha256:7195a7362d333592064c837635aae06a0092e7ff7e7eec84746eabc0929e20ba
+        sha256:c1bebe7e4899bd64304a84fea26f9ea635e20897f206ce6fa86bd446715c5ffc
 
 let additions =
       { bytestrings = eth-core-deps.bytestrings
