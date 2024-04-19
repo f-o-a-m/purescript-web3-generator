@@ -3,7 +3,6 @@ module Data.AbiParser where
 import Prelude
 
 import Control.Alternative ((<|>))
-import Control.Error.Util (note)
 import Data.Argonaut ((.:?))
 import Data.Argonaut as A
 import Data.Argonaut.Core (fromObject)
@@ -13,7 +12,7 @@ import Data.Argonaut.Decode.Error (JsonDecodeError(..), printJsonDecodeError)
 import Data.Argonaut.Encode.Class (encodeJson)
 import Data.Array (fromFoldable, intercalate, length, zip, (..))
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..), either)
+import Data.Either (Either(..), either, note)
 import Data.Foldable (foldr)
 import Data.FunctorWithIndex (mapWithIndex)
 import Data.Generic.Rep (class Generic)

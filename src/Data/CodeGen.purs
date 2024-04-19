@@ -4,7 +4,6 @@ import Prelude
 
 import Ansi.Codes (Color(..))
 import Ansi.Output (withGraphics, foreground)
-import Control.Error.Util (note)
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.State (class MonadState, StateT, evalStateT, get, put)
 import Control.Monad.Writer (class MonadTell, runWriterT, tell)
@@ -16,7 +15,7 @@ import Data.Argonaut.Prisms (_Object)
 import Data.Array (catMaybes, concat, foldMap, length, null)
 import Data.Array as Array
 import Data.Bifunctor (lmap)
-import Data.Either (Either(..), either)
+import Data.Either (Either(..), either, note)
 import Data.Foldable (for_)
 import Data.Generator (genCode, toSignature)
 import Data.Identity (Identity(..))
@@ -36,9 +35,9 @@ import Effect.Exception (error)
 import Network.Ethereum.Core.HexString (unHex)
 import Network.Ethereum.Core.Keccak256 (toSelector)
 import Node.Encoding (Encoding(UTF8))
-import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat)
+import Node.FS.Aff (readTextFile, writeTextFile, readdir, stat, mkdir')
+import Node.FS.Perms (permsReadWrite)
 import Node.FS.Stats as Stats
-import Node.FS.Sync.Mkdirp (mkdirp)
 import Node.Path (FilePath, basenameWithoutExt, extname)
 import Partial.Unsafe (unsafePartial)
 import Tidy.Codegen as Gen
@@ -56,7 +55,7 @@ generatePS :: GeneratorOptions -> Aff ABIErrors
 generatePS os = do
   let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
   fs <- getAllJsonFiles opts.jsonDir
-  liftEffect $ mkdirp opts.pursDir
+  mkdir' opts.pursDir {recursive: true, mode: permsReadWrite}
   case fs of
     [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> do
