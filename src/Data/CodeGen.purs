@@ -55,7 +55,7 @@ generatePS :: GeneratorOptions -> Aff ABIErrors
 generatePS os = do
   let opts = os { pursDir = os.pursDir <> "/" <> replaceAll (Pattern ".") (Replacement "/") os.modulePrefix }
   fs <- getAllJsonFiles opts.jsonDir
-  mkdir' opts.pursDir {recursive: true, mode: permsReadWrite}
+  mkdir' opts.pursDir { recursive: true, mode: permsReadWrite }
   case fs of
     [] -> throwError <<< error $ "No abi json files found in directory: " <> opts.jsonDir
     fs' -> do
