@@ -8,7 +8,7 @@ import Data.CodeGen (GeneratorOptions, generatePS)
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
-import Node.Process (exit)
+import Node.Process (exit')
 import Options.Applicative (Parser, ParserInfo, boolean, execParser, fullDesc, header, help, helper, info, long, metavar, option, progDesc, showDefault, strOption, value, (<**>))
 
 data Args = Args GeneratorOptions
@@ -62,7 +62,7 @@ generatorMain :: Effect Unit
 generatorMain = launchAff_ do
   (Args args) <- liftEffect $ execParser opts
   errs <- generatePS args
-  liftEffect <<< exit $
+  liftEffect <<< exit' $
     if (A.null errs) then 0 else 1
   where
   opts :: ParserInfo Args
