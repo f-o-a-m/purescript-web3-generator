@@ -10,7 +10,7 @@ import Data.Newtype (un)
 import Data.String (drop, joinWith, take, toLower, toUpper)
 import Data.Traversable (all, for, for_)
 import Data.Tuple (Tuple(..))
-import Network.Ethereum.Core.HexString (fromByteString)
+import Network.Ethereum.Core.HexString (fromBuffer)
 import Network.Ethereum.Core.Keccak256 (keccak256)
 import Network.Ethereum.Web3.Types (HexString, unHex)
 import Partial.Unsafe (unsafeCrashWith, unsafePartial)
@@ -59,7 +59,7 @@ basicToPSType opts a = case a of
     bytesN <- TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "BytesN")
     pure $ Gen.typeApp (Gen.typeCtor bytesN) [ Gen.typeInt n ]
   SolidityBytesD -> unsafePartial $ maybeWrap opts true $
-    Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ByteString")
+    Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "ImmutableBuffer")
   tup@(SolidityTuple factors) -> unsafePartial $ maybeWrap opts (noRecordsAtOrBelow $ BasicType tup)
     case factors of
       [] -> Gen.typeCtor <$> TidyM.importFrom "Network.Ethereum.Web3.Solidity" (TidyM.importType "Tuple0")
@@ -678,4 +678,4 @@ eventId (SolidityEvent e) =
   let
     eventArgs = map (\a -> format a) e.inputs
   in
-    fromByteString $ keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
+    fromBuffer $ keccak256 $ e.name <> "(" <> joinWith "," eventArgs <> ")"
