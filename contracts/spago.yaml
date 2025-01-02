@@ -1,0 +1,33 @@
+package:
+  name: contracts
+  dependencies:
+    - web3
+workspace:
+  extraPackages:
+    eth-core:
+      git: https://github.com/f-o-a-m/purescript-eth-core
+      ref: 3db27d22f738498a1e4263f537cd25279fc88088
+    coroutine-transducers:
+      dependencies:
+        - aff
+        - console
+        - coroutines
+        - effect
+        - either
+        - foldable-traversable
+        - freet
+        - functors
+        - maybe
+        - newtype
+        - parallel
+        - prelude
+        - psci-support
+        - tailrec
+        - transformers
+        - tuples
+      git: https://github.com/martyall/purescript-coroutine-transducers
+      ref: v1.0.0
+    web3:
+      git: https://github.com/f-o-a-m/purescript-web3.git
+      ref: bd87cd18adb863cfccdfe5ff263a129c02f1c8c2
+

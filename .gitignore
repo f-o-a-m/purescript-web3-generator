@@ -2,7 +2,7 @@
 /output/
 /generated-docs/
 /.psa*
-/contracts/
+/contracts/src
 package-lock.json
 /.spago/
 .vscode
