@@ -3,7 +3,6 @@ module Test.Main where
 import Prelude
 
 import Effect (Effect)
-import Effect.Aff (launchAff_)
 import Effect.Exception (error)
 import Control.Monad.Error.Class (throwError)
 import Data.AbiParser (AbiWithErrors)
@@ -16,11 +15,10 @@ import Node.FS.Aff (readTextFile)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
-import Test.Spec.Runner (runSpec)
+import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 main :: Effect Unit
-main = launchAff_
-  $ runSpec [ consoleReporter ]
+main = runSpecAndExitProcess [ consoleReporter ]
   $ do
       simpleStorageParserSpec
 
@@ -42,7 +40,7 @@ simpleStorageParserSpec =
           fail $ "Got errors during generation: " <> show errs
       shouldHaveNoErrors =<< generatePS
         { jsonDir: "./abi-data/truffle/build/contracts"
-        , pursDir: "./contracts"
+        , pursDir: "./contracts/src"
         , truffle: true
         , exprPrefix: ""
         , modulePrefix: "ContractsTruffle"
@@ -50,7 +48,7 @@ simpleStorageParserSpec =
 
       shouldHaveNoErrors =<< generatePS
         { jsonDir: "./abi-data/abis"
-        , pursDir: "./contracts"
+        , pursDir: "./contracts/src"
         , truffle: false
         , exprPrefix: ""
         , modulePrefix: "Contracts"
