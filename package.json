@@ -2,7 +2,7 @@
   "private": true,
   "scripts": {
     "build": "spago build",
-    "test": "rm -rf contracts; spago -x test.dhall test; spago -x test.dhall build",
+    "test": "rm -rf contracts/src; spago test; cd contracts; spago build",
     "tidy": "purs-tidy format-in-place \"src/**/*.purs\" \"test/**/*.purs\" \"example/**/*.purs\"",
     "tidy-check": "purs-tidy check \"src/**/*.purs\" \"test/**/*.purs\" \"example/**/*.purs\""
   },
@@ -16,6 +16,6 @@
     "purescript": "^0.15.8",
     "purescript-psa": "^0.8.2",
     "purs-tidy": "^0.10.0",
-    "spago": "^0.20.9"
+    "spago": "next"
   }
 }
